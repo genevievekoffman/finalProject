@@ -4,13 +4,11 @@
 #define MAX_CHAR 50
 
 typedef struct dummy_email {
-    //unique id consists of server and sequence_num
-    int server;
-    int sequence_num; 
     //to & subject are part of the header
     char to[MAX_CHAR];
     char subject[MAX_CHAR];
     char message[BYTES]; 
+    char sender[MAX_CHAR];
 }email;
 
 typedef struct dummy_update {
@@ -19,6 +17,19 @@ typedef struct dummy_update {
     //following will !null when type = 2 or 3
     int server;
     int sequence_num;
-    char client[MAX_CHAR];
+    char client[MAX_CHAR]; //do we need this??? can i delete ...
     
 }update;
+
+typedef struct dummy_cell {
+    int sn; //serial number 1-20
+    char status; //'r', 'u', 'd'
+
+    //pointer to an email
+    email* contents;
+
+    //unique id consists of server and sequence_num
+    int server_index;
+    int sequence_num;
+
+}cell;
