@@ -12,8 +12,7 @@
 #define MAX_VSSETS 10 //?what is this for
 #define MAX_MESSLEN     5000
 
-static char all_servers[] = "all_servers";
-static char server_index; //unique server index
+static int server_index; //unique server index
 static char Private_group[MAX_GROUP_NAME];
 static char Server[80];
 static mailbox Mbox;
@@ -47,39 +46,34 @@ int main(int argc, char **argv)
         exit(0);
     }
 
-    char *str = argv[1];
-    //server_index = atoi(str);
-    server_index = *str; 
-    printf("\nserver_index = %d", server_index);
-    fflush(0);
-    
+    server_index = atoi(argv[1]); 
     sprintf( Server, "server" );
     sprintf( Spread_name, "10050"); //always connects to my port
     strncat(Server, argv[1], 1);
-    printf("\nafter strncat Server = %s\n", Server);
+    sprintf(Private_group,argv[1]); //init
     
     int ret;
     /* connect to SPREAD */ 
-    ret = SP_connect_timeout( Spread_name, Server, 0, 1, &Mbox, Private_group, test_timeout ); //Spread_name is the daemon, Server is what they will be known as,
+    ret = SP_connect_timeout( Spread_name, Server, 0, 1, &Mbox, Private_group, test_timeout ); 
                                     //private_group is returned group name(used for unicast msgs only)
     if( ret != ACCEPT_SESSION ) {
         SP_error( ret );
         Bye();
     }
     printf("\n\t>Server: connected to %s with private group %s\n", Spread_name, Private_group );
-    //private_group is like #S1#ugrad8
-
+    
+    E_init();
+    E_attach_fd(Mbox,READ_FD, Read_message,0,NULL,HIGH_PRIORITY); //select
     //joins its own public group ex: S1, S2 ... (clients will request connection here)
-    //ret = SP_join( Mbox, Server );
-    //if ( ret < 0 ) SP_error( ret );
-
-    printf("\nmailbox = %d\n", Mbox);
+    ret = SP_join( Mbox, Server );
+    if ( ret < 0 ) SP_error( ret );
+    printf("\njoined its own public group: %s\n", Server);
     //joins the network group with all servers in it
-    ret = SP_join( Mbox, all_servers);
+    ret = SP_join( Mbox, "all_servers");
     if ( ret < 0 ) SP_error( ret );
     
-    for(;;)
-        Read_message();
+    E_handle_events();
+
 }
 
 static void Read_message()
@@ -99,19 +93,11 @@ static void Read_message()
     service_type = 0;
 
     //can receive from all_servers or any client connected to it
-    ret = SP_receive( Mbox, &service_type, sender, 10, &num_groups, target_groups, &mess_type, &endian_mismatch, msg_size, buf);
-        //target groups should tell us who it was sent to 
-    if ( ret < 0 ) {
-        if ( ! To_exit ) 
-        {
-            SP_error( ret );
-            printf("\nBye.\n");
-        }
-        exit(0);
-    }
-
+    ret = SP_receive( Mbox, &service_type, sender, 10, &num_groups, target_groups, &mess_type, &endian_mismatch, sizeof(mess), mess);
+    
     if ( Is_regular_mess( service_type ) )
     {
+        printf("\nregular msg\n");
         mess[ret] = 0;
         switch ( mess_type )
         {
@@ -134,7 +120,7 @@ static void Read_message()
                     new_update->email_ = *new_email;
                 
                     char filename[] = "/tmp/ts_";
-                    strcat(filename, &server_index);
+                    strcat(filename, server_index);
                     strcat(filename, new_email->to);
 
                     //write the new email to our log/file for that users email file
@@ -149,9 +135,13 @@ static void Read_message()
                 break;
         }
         printf("reg msg");
+        
+        //switch 
+
     } else if (Is_membership_mess( service_type ) )
     {
-        ret = SP_get_memb_info( buf, service_type, &memb_info );
+        printf("\nmembership msg\n");
+        ret = SP_get_memb_info( mess, service_type, &memb_info );
         if (ret < 0)
         {
             printf("BUG: membership message does not have valid body\n");
@@ -169,11 +159,13 @@ static void Read_message()
             if ( Is_caused_join_mess( service_type ) ){
                 printf("Due to the JOIN of %s\n", memb_info.changed_member );
             } else if( Is_caused_leave_mess( service_type ) ){
+                //go into state transfer & above
                 printf("Due to the LEAVE of %s\n", memb_info.changed_member );
             } else if( Is_caused_disconnect_mess( service_type ) ){
                 printf("Due to the DISCONNECT of %s\n", memb_info.changed_member );
             } else if( Is_caused_network_mess( service_type ) )
             {
+                //below doesnt matter rn
                 printf("Due to NETWORK change with %u VS sets\n", memb_info.num_vs_sets);
                 num_vs_sets = SP_get_vs_sets_info( buf, &vssets[0], MAX_VSSETS, &my_vsset_index );
                 if (num_vs_sets < 0)

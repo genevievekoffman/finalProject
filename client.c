@@ -16,7 +16,7 @@ static char Spread_name[80];
 static int To_exit = 0;
 static mailbox Mbox;
 static char Private_group[MAX_GROUP_NAME];
-static char curr_server[10]; //servers private name we are connected to atm
+static char curr_server[] = "server"; //server index currently connected to 
 static char curr_client[MAX_USERNAME]; //username of the current client logged in
 static void Bye();
 static void Read_message();
@@ -93,27 +93,24 @@ static void User_command()
                 break;
             }
             char server[MAX_USERNAME];
-        
-            ret = sscanf( &command[2], "%s", server );
+            ret = sscanf( &command[2], "%s", server);
+            
+            int s = atoi(server);
             //make sure it's just one int & 1-5
-            int i = (int)(server[0] - '0');
-            if ( ret != 1 || i > 5 || i < 1 ) { 
+            if ( ret != 1 || s > 5 || s < 1 ) { 
                 printf("\ninvalid server number\n");
                 break;
             }
 
-            //joins the server_client group
-            char c = '_';
-            strncat(server, &c, 1);
-            printf("\nserver = %s", server);
+            //joins the server_client group: 1genkoffman
             strncat( server, curr_client, sizeof(curr_client) );
-            printf("\nafter strncat; server_client = %s\n", server);
-            
             ret = SP_join(Mbox, server);
             if ( ret < 0 ) SP_error( ret );
-            
+         
+            strncat(curr_server, &server[0], 1); //just the first char (index)
             //requests to connect with that server
-            ret = SP_join(Mbox, &server[0]); //server[0] is the servers index 
+            printf("\njoining server: %s", curr_server);
+            ret = SP_join(Mbox, curr_server); 
             if ( ret < 0 ) SP_error( ret );
             
             //TODO: waits until it gets a membership notification that says the server joined the group
@@ -218,7 +215,6 @@ static void Read_message()
 /* prints out contents of client_window */
 static void print_emails()
 {
-    printf("\nuser:%s \nmail server:%s\n", curr_client, curr_server);
     for( int i = 0; i < 20; i++ ) {
         cell *email = client_window[i];
         if(email == NULL) {
