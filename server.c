@@ -8,9 +8,7 @@
 #include <string.h>
 #include <time.h>
 
-#define MAX_SERVERS 5
 #define MAX_VSSETS 10 //?what is this for
-#define MAX_MESSLEN     5000
 
 static int server_index; //unique server index
 static char Private_group[MAX_GROUP_NAME];
@@ -18,10 +16,7 @@ static char Server[80];
 static mailbox Mbox;
 static char Spread_name[80];
 static int To_exit = 0;
-static char *buf;
-static int msg_size = sizeof(update);
-
-char sender[MAX_GROUP_NAME]; //either a server or user
+static char sc;
 
 static void Read_message();
 static void Bye();
@@ -37,7 +32,7 @@ int main(int argc, char **argv)
     test_timeout.sec = 5;
     test_timeout.usec = 0;
 
-    updates_sent = 0; //initialize to 0
+    updates_sent = 0; 
     new_update = malloc(sizeof(update));
     
     //handle arguments
@@ -49,13 +44,12 @@ int main(int argc, char **argv)
     server_index = atoi(argv[1]); 
     sprintf( Server, "server" );
     sprintf( Spread_name, "10050"); //always connects to my port
-    strncat(Server, argv[1], 1);
-    sprintf(Private_group,argv[1]); //init
+    strncat( Server, argv[1], 1 );
+    sprintf( Private_group, argv[1] ); //init
     
-    int ret;
     /* connect to SPREAD */ 
+    int ret;
     ret = SP_connect_timeout( Spread_name, Server, 0, 1, &Mbox, Private_group, test_timeout ); 
-                                    //private_group is returned group name(used for unicast msgs only)
     if( ret != ACCEPT_SESSION ) {
         SP_error( ret );
         Bye();
@@ -63,22 +57,23 @@ int main(int argc, char **argv)
     printf("\n\t>Server: connected to %s with private group %s\n", Spread_name, Private_group );
     
     E_init();
-    E_attach_fd(Mbox,READ_FD, Read_message,0,NULL,HIGH_PRIORITY); //select
-    //joins its own public group ex: S1, S2 ... (clients will request connection here)
+    E_attach_fd( Mbox, READ_FD, Read_message, 0, NULL, HIGH_PRIORITY); 
+   
+    //joins its own public group
     ret = SP_join( Mbox, Server );
     if ( ret < 0 ) SP_error( ret );
-    printf("\njoined its own public group: %s\n", Server);
+    
     //joins the network group with all servers in it
     ret = SP_join( Mbox, "all_servers");
     if ( ret < 0 ) SP_error( ret );
     
     E_handle_events();
-
 }
 
 static void Read_message()
 {
     static  char    mess[MAX_MESSLEN];
+    char		    sender[MAX_GROUP_NAME];
     char            target_groups[MAX_SERVERS][MAX_GROUP_NAME];
     membership_info memb_info;
     int             service_type;
@@ -91,52 +86,68 @@ static void Read_message()
     char            members[MAX_SERVERS][MAX_GROUP_NAME];
     int             ret;
     service_type = 0;
+    
+    sc = (server_index + '0'); 
 
     //can receive from all_servers or any client connected to it
     ret = SP_receive( Mbox, &service_type, sender, 10, &num_groups, target_groups, &mess_type, &endian_mismatch, sizeof(mess), mess);
-    
+   //what is 10 (the size of the groups array ...)
     if ( Is_regular_mess( service_type ) )
     {
         printf("\nregular msg\n");
         mess[ret] = 0;
         switch ( mess_type )
         {
-            case 0: ;
-                printf("\n0");
+            case 0: {
+                    
+                printf("\n\t0: client requesting to connect msg\n");
+                printf("b4 strncat; sc = %c\n", sc);
+               
+                //join the group server_client
+                char *msg = (char*)mess;
+                printf("\nmess: %s", msg);
+                printf("\nsender = %s\n", sender);
+                fflush(0); 
+                //joins the group server_client
+                char sc_group[MAX_MESSLEN];
+                sprintf(sc_group, &sc);
+                //strncat(sc_group, mess, MAX_MESSLEN);
+                strcat(sc_group, msg);
+                printf("server joining server_client group = %s", sc_group);
+                int ret = SP_join(Mbox, sc_group);
+                if ( ret < 0 ) SP_error( ret ); 
+                
+                printf("\n\t0: client requesting to connect msg\n");
+                
                 break;
+                }
             case 1: ;
-                //1 = new email 
-                //is it from a client or another server?
-                //check the sender -> 
+                //1 = new email from a client 
                 
-                //if it's from a client: (not server 1 through 5)
-                    //create a new update/fill its data
-                    new_update->type = 1; //new email
-                    new_update->server = server_index;
-                    updates_sent++;
-                    new_update->sequence_num = updates_sent;
-                    email *new_email = (email*)buf;
+                //create a new update/fill its data
+                new_update->type = 1; //new email
+                new_update->server = server_index;
+                updates_sent++;
+                new_update->sequence_num = updates_sent;
+                email *new_email = (email*)mess;
 
-                    new_update->email_ = *new_email;
+                new_update->email_ = *new_email;
                 
-                    char filename[] = "/tmp/ts_";
-                    strcat(filename, server_index);
-                    strcat(filename, new_email->to);
+                char filename[] = "/tmp/ts_";
+                strcat(filename, &sc);
+                strcat(filename, new_email->to);
 
-                    //write the new email to our log/file for that users email file
-                    if ( (fw = fopen( (strcat(filename,"emails.txt") ) , "w") ) == NULL ) {
-                        perror("fopen");
-                        exit(0);
-                    }
-                    //write to the top of the file
-                    fprintf(fw,"%d %d", new_update->server, new_update->sequence_num); //server, sequence_num : to, subject, msg, sender
+                //write the new email to our log/file for that users email file
+                if ( (fw = fopen( (strcat(filename,"emails.txt") ) , "w") ) == NULL ) {
+                    perror("fopen");
+                    exit(0);
+                }
+                //write to the top of the file
+                fprintf(fw,"%d %d", new_update->server, new_update->sequence_num); //server, sequence_num : to, subject, msg, sender
                 //if it's from another server:
                 printf("\n1");
                 break;
         }
-        printf("reg msg");
-        
-        //switch 
 
     } else if (Is_membership_mess( service_type ) )
     {
@@ -166,27 +177,11 @@ static void Read_message()
             } else if( Is_caused_network_mess( service_type ) )
             {
                 //below doesnt matter rn
-                printf("Due to NETWORK change with %u VS sets\n", memb_info.num_vs_sets);
-                num_vs_sets = SP_get_vs_sets_info( buf, &vssets[0], MAX_VSSETS, &my_vsset_index );
                 if (num_vs_sets < 0)
                 {
                     printf("BUG: membership message has more then %d vs sets. Recompile with larger MAX_VSSETS\n", MAX_VSSETS);
                     SP_error( num_vs_sets );
                     exit( 1 );
-                }
-                for (int i = 0; i < num_vs_sets; i++ )
-                {
-                    printf("%s VS set %d has %u members:\n",
-                        (i  == my_vsset_index) ?
-                        ("LOCAL") : ("OTHER"), i, vssets[i].num_members );
-                    ret = SP_get_vs_set_members(buf, &vssets[i], members, MAX_SERVERS);
-                    if (ret < 0) {
-                        printf("VS Set has more then %d members. Recompile with larger MAX_MEMBERS\n", MAX_SERVERS);
-                        SP_error( ret );
-                        exit( 1 );
-                    }
-                    for ( int j = 0; j < vssets[i].num_members; j++ )
-                        printf("\t%s\n", members[j] );
                 }
             }
         
@@ -206,8 +201,11 @@ static void request_mailbox(char *client)
     cell new_window[20];
     int sn = 1; //goes up to 20
     FILE *fr; //pointer to file for reading 
+    
+    sc = (server_index + '0'); 
+    
     char filename[] = "/tmp/ts_";
-    strcat(filename, &server_index);
+    strcat(filename, &sc);
     strcat(filename, client);
     
     while ( sn <= 20 ) { 

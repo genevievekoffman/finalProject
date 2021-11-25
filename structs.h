@@ -2,12 +2,13 @@
 
 #define BYTES 250 //since 250*4=1000 bytes
 #define MAX_CHAR 50
+#define MAX_MESSLEN 250 //since 250*4=1000 bytes
+#define MAX_SERVERS 5
 
 typedef struct dummy_email {
-    //to & subject are part of the header
     char to[MAX_CHAR];
     char subject[MAX_CHAR];
-    char message[BYTES]; 
+    char message[MAX_MESSLEN]; 
     char sender[MAX_CHAR];
 }email;
 
@@ -18,7 +19,6 @@ typedef struct dummy_update {
     int server;
     int sequence_num;
     char client[MAX_CHAR]; //do we need this??? can i delete ...
-    
 }update;
 
 typedef struct dummy_cell {
@@ -31,5 +31,4 @@ typedef struct dummy_cell {
     //unique id consists of server and sequence_num
     int server_index;
     int sequence_num;
-
 }cell;

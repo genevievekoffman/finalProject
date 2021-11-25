@@ -16,7 +16,7 @@ static char Spread_name[80];
 static int To_exit = 0;
 static mailbox Mbox;
 static char Private_group[MAX_GROUP_NAME];
-static char curr_server[] = "server"; //server index currently connected to 
+static char curr_server[MAX_GROUP_NAME]; //server index currently connected to 
 static char curr_client[MAX_USERNAME]; //username of the current client logged in
 static void Bye();
 static void Read_message();
@@ -67,6 +67,7 @@ static void User_command()
     switch (command[0])
     {
         case 'u': ;
+            printf("cmnd = u\n");
             //logging in
             char username[MAX_USERNAME];
             int ret = sscanf( &command[2], "%s", username );
@@ -87,8 +88,10 @@ static void User_command()
             break;
 
         case 'c': ;
+            printf("cmnd = c\n");
+            strncpy(curr_server, "server", MAX_GROUP_NAME); //resets the server name
             //connecting to a mail server
-            if ( logged_in == 0) {
+            if ( logged_in == 0 ) {
                 printf("\n...no user logged in ... \n");
                 break;
             }
@@ -106,20 +109,22 @@ static void User_command()
             strncat( server, curr_client, sizeof(curr_client) );
             ret = SP_join(Mbox, server);
             if ( ret < 0 ) SP_error( ret );
-         
+            printf("\n\tjoined server_client group: %s", server);
             strncat(curr_server, &server[0], 1); //just the first char (index)
+            printf("curr_server = %s", curr_server);
             //requests to connect with that server
-            printf("\njoining server: %s", curr_server);
-            ret = SP_join(Mbox, curr_server); 
+            //~sends a connection request to the server
+            printf("\n\tcurr_client = %s", curr_client);
+            ret = SP_multicast(Mbox, AGREED_MESS, curr_server, 0, sizeof(curr_client), curr_client);
             if ( ret < 0 ) SP_error( ret );
             
             //TODO: waits until it gets a membership notification that says the server joined the group
                 //then we can update the curr_server (connection etablished)
-            //sprintf(curr_server, input[0]); 
-             
+            //can we just set the curr_server or do we need to wait for connection join notification on that group ...
             break;
 
         case 'm': ;
+            printf("cmnd = m\n");
             //sending an email
             if ( logged_in == 0) {
                 printf("\n...no user logged in ... \n");
@@ -158,6 +163,8 @@ static void User_command()
             break;
 
         case 'd': ;
+            
+            printf("cmnd = d\n");
             if (logged_in == 0) {
                 printf("\n...no user logged in ... \n");
                 break;
@@ -183,9 +190,12 @@ static void User_command()
             }
                 
             break;
-        case 'r':
+        case 'r': ;
+            printf("cmnd = r\n");
+            break;
 
         case 'l': ;
+            printf("cmnd = l\n");
             //must be logged in
             if ( logged_in == 0) {
                 printf("\n...no user logged in ... \n");
@@ -209,7 +219,17 @@ static void User_command()
 
 static void Read_message()
 {
+    static char    mess[MAX_MESSLEN];
+    char		   sender[MAX_GROUP_NAME];
+    char           target_groups[MAX_SERVERS][MAX_GROUP_NAME];
+    int            service_type;
+    int16          mess_type;
+    int            endian_mismatch;
+    int            num_groups;
 
+    int ret;
+
+    ret = SP_receive(Mbox, &service_type, sender, 10, &num_groups, target_groups, &mess_type, &endian_mismatch, sizeof(mess), mess); 
 }
 
 /* prints out contents of client_window */
