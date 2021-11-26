@@ -7,7 +7,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define MAX_USERNAME 20
 
 static void print_emails();
 static void print_menu();
@@ -22,7 +21,7 @@ static void Bye();
 static void Read_message();
 
 static int logged_in = 0; //1 means there is a use logged in (I didnt know how to check if currclient was null bc it doesnt work ...
-static email *new_mail;
+//static email *new_msg;
 
 //internal DS: array holding 20 cells (pointer to cells)
 static cell *client_window[20];
@@ -33,8 +32,11 @@ int main( int argc, char *argv[] )
     test_timeout.sec = 5;
     test_timeout.usec = 0;
 
-    
-    new_mail = malloc(sizeof(email));
+    /*
+    printf("\nsize of email = %ld", sizeof(email));
+    new_msg = (email*)malloc(sizeof(email));
+    printf("\nsize of new_msg= %ld", sizeof(new_msg));
+    */
 
     sprintf( Spread_name, "10050"); //always connects to my port
     
@@ -67,7 +69,9 @@ static void User_command()
     switch (command[0])
     {
         case 'u': ;
-            printf("cmnd = u\n");
+            
+            /*NEED TO CONNECT TO A DEFAULT SERVER WHEN LOGGING IN...*/
+
             //logging in
             char username[MAX_USERNAME];
             int ret = sscanf( &command[2], "%s", username );
@@ -126,31 +130,32 @@ static void User_command()
         case 'm': ;
             printf("cmnd = m\n");
             //sending an email
-            if ( logged_in == 0) {
+            if ( logged_in == 0) { //TODO: need to make sure a connection with a server exists 
                 printf("\n...no user logged in ... \n");
                 break;
             }
-            
-            //get the recipient/to, subject, & msg
-            sprintf(new_mail->sender, curr_client);
-            printf("\n\tto: ");
-            fgets(new_mail->to,MAX_USERNAME,stdin);
-            printf("\n\tsubject: ");
-            fgets(new_mail->subject,MAX_CHAR,stdin);
-            printf("\n\tmessage: ");
-            fgets(new_mail->message,250,stdin);
-                
-            /*
-            printf("\nnew email:");
-            printf("\n\tto= %s", new_mail->to);
-            printf("\n\tsubject = %s", new_mail->subject);
-            printf("\n\tmsg = %s", new_mail->message);
-            */
-            
-            //TODO: send this email to the servers group
-            //server will create a new update and put the email in it 
-            ret = SP_multicast(Mbox, AGREED_MESS, curr_server, 1, sizeof(email), (char*)new_mail); //tag 1 = new email from client
 
+            //ptr = (int*) malloc(100 * sizeof(int));
+            //ptr = (cast-type*) malloc(byte-size)
+            email *new_msg;
+            new_msg = (email*) malloc(sizeof(email));
+            //get the recipient/to, subject, & msg
+            printf("\n\tto: ");
+            fgets(new_msg->to,MAX_USERNAME,stdin);
+            printf("\n\tsubject: ");
+            fgets(new_msg->subject,BYTES,stdin);
+            printf("\n\tmessage: ");
+            fgets(new_msg->message,MAX_MESSLEN,stdin);
+            sprintf(new_msg->sender, curr_client);
+            printf("\nnew_msg->sender = %s", new_msg->sender);
+            printf("new_msg->to= %s", new_msg->to);
+            printf("new_msg->subject= %s", new_msg->subject);
+            printf("new_msg->msg = %s", new_msg->message);
+
+            //TODO: send this email to the servers group
+            ret = SP_multicast(Mbox, AGREED_MESS, curr_server, 1, sizeof(email), (char*)(new_msg));
+            if ( ret < 0 ) SP_error( ret );
+            
             //just a test to see if print works
             /*
             cell test;
@@ -159,7 +164,7 @@ static void User_command()
             test.contents = new_mail;
             client_window[0] = &test;
             */
-            
+
             break;
 
         case 'd': ;
@@ -266,7 +271,7 @@ static void print_menu()
 static void Bye()
 {
     To_exit = 1;
-    free(new_mail);
+    //free(new_msg);
     printf("\nBye.\n");
     SP_disconnect( Mbox );
     exit(0);

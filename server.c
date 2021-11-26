@@ -19,6 +19,7 @@ static int To_exit = 0;
 static char sc;
 
 static void Read_message();
+static void Send_message();
 static void Bye();
 static void request_mailbox(char *client);
 
@@ -56,9 +57,7 @@ int main(int argc, char **argv)
     }
     printf("\n\t>Server: connected to %s with private group %s\n", Spread_name, Private_group );
     
-    E_init();
-    E_attach_fd( Mbox, READ_FD, Read_message, 0, NULL, HIGH_PRIORITY); 
-   
+    
     //joins its own public group
     ret = SP_join( Mbox, Server );
     if ( ret < 0 ) SP_error( ret );
@@ -67,12 +66,22 @@ int main(int argc, char **argv)
     ret = SP_join( Mbox, "all_servers");
     if ( ret < 0 ) SP_error( ret );
     
+    E_init();
+    E_attach_fd( Mbox, READ_FD, Read_message, 0, NULL, HIGH_PRIORITY ); 
     E_handle_events();
+}
+
+static void Send_message() 
+{
+    printf("send message");
+
+
 }
 
 static void Read_message()
 {
-    static  char    mess[MAX_MESSLEN];
+    printf("Read_message()\n");
+    static  char    mess[sizeof(update)]; //the biggest it can be ...
     char		    sender[MAX_GROUP_NAME];
     char            target_groups[MAX_SERVERS][MAX_GROUP_NAME];
     membership_info memb_info;
@@ -85,52 +94,51 @@ static void Read_message()
     unsigned int    my_vsset_index;
     char            members[MAX_SERVERS][MAX_GROUP_NAME];
     int             ret;
-    service_type = 0;
     
     sc = (server_index + '0'); 
 
-    //can receive from all_servers or any client connected to it
     ret = SP_receive( Mbox, &service_type, sender, 10, &num_groups, target_groups, &mess_type, &endian_mismatch, sizeof(mess), mess);
-   //what is 10 (the size of the groups array ...)
+
     if ( Is_regular_mess( service_type ) )
     {
         printf("\nregular msg\n");
         mess[ret] = 0;
+        printf("mess_typ = %d", mess_type);
         switch ( mess_type )
         {
-            case 0: {
-                    
-                printf("\n\t0: client requesting to connect msg\n");
-                printf("b4 strncat; sc = %c\n", sc);
-               
+            case 0: ; 
+                printf("case 0\n");
                 //join the group server_client
                 char *msg = (char*)mess;
-                printf("\nmess: %s", msg);
-                printf("\nsender = %s\n", sender);
-                fflush(0); 
                 //joins the group server_client
                 char sc_group[MAX_MESSLEN];
                 sprintf(sc_group, &sc);
-                //strncat(sc_group, mess, MAX_MESSLEN);
                 strcat(sc_group, msg);
-                printf("server joining server_client group = %s", sc_group);
                 int ret = SP_join(Mbox, sc_group);
                 if ( ret < 0 ) SP_error( ret ); 
-                
-                printf("\n\t0: client requesting to connect msg\n");
-                
                 break;
-                }
-            case 1: ;
-                //1 = new email from a client 
                 
+            case 1: ;
+                //1 = new email from a client  
                 //create a new update/fill its data
+                /*
                 new_update->type = 1; //new email
                 new_update->server = server_index;
                 updates_sent++;
                 new_update->sequence_num = updates_sent;
-                email *new_email = (email*)mess;
+                */
 
+                email *new_email = (email*)malloc(sizeof(email)); 
+                new_email = (email*)mess;
+                
+                printf("\nnew_email->to = %s", new_email->to);
+                printf("new_email->subject = %s", new_email->subject);
+                printf("new_email->message = %s", new_email->message);
+                printf("new_email->sender = %s\n", new_email->sender);
+               
+                break;
+
+                /*
                 new_update->email_ = *new_email;
                 
                 char filename[] = "/tmp/ts_";
@@ -144,8 +152,15 @@ static void Read_message()
                 }
                 //write to the top of the file
                 fprintf(fw,"%d %d", new_update->server, new_update->sequence_num); //server, sequence_num : to, subject, msg, sender
-                //if it's from another server:
-                printf("\n1");
+                */
+                //break;
+        
+            case 2: ;
+                printf("\ncase 2");
+                break;
+
+            default:
+                printf("defualt unknown");
                 break;
         }
 
@@ -229,6 +244,7 @@ static void Bye()
     To_exit = 1;
     free(new_update);
     printf("\nBye.\n");
+    //E_detach_fd( Mbox, READ_FD ); 
     SP_disconnect( Mbox );
     exit(0);
 }
