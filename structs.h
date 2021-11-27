@@ -1,5 +1,3 @@
-//define all my structs in here 
-
 #define BYTES 20 
 #define MAX_MESSLEN 250 //since 250*4=1000 bytes
 #define MAX_SERVERS 5
@@ -12,12 +10,17 @@ typedef struct dummy_email {
     char sender[MAX_USERNAME];
 }email;
 
+typedef struct dummy_id {
+    int server;
+    int sequence_num;
+}id;
+
 typedef struct dummy_update {
     int type; //1 = new email, 2 = reading an email, 3 = deleting an email
     email email_; //null when type = 2 or 3
+    
     //following will !null when type = 2 or 3
-    int server;
-    int sequence_num;
+    struct dummy_id *id; 
 }update;
 
 typedef struct dummy_cell {
@@ -26,8 +29,14 @@ typedef struct dummy_cell {
 
     //pointer to an email
     email* contents;
-
-    //unique id consists of server and sequence_num
-    int server_index;
-    int sequence_num;
+    struct dummy_id id;
 }cell;
+
+typedef struct dummy_node{
+    struct dummy_update *update; 
+    struct dummy_node *nxt; 
+}node;
+
+typedef struct dummy_linkedList{
+    struct dummy_node *sentinel;
+}linkedList;

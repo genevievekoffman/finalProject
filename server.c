@@ -22,10 +22,18 @@ static void Read_message();
 static void Send_message();
 static void Bye();
 static void request_mailbox(char *client);
+static void updates_window_init();
+static int repo_insert(linkedList *l, update* u);
+void print_repo(linkedList *l);
 
 static update *new_update;
+static id *unique_id;
 static int updates_sent; //sequence num
 FILE *fw;
+
+//an array of pointers to Linked lists
+static linkedList* updates_window[MAX_SERVERS]; 
+static id* status_matrix[MAX_SERVERS][MAX_SERVERS]; //5x5 matrix with pointers to id's
 
 int main(int argc, char **argv)
 {
@@ -35,8 +43,8 @@ int main(int argc, char **argv)
 
     updates_sent = 0; 
     new_update = malloc(sizeof(update));
-    
-    //handle arguments
+    unique_id = malloc(sizeof(id));
+
     if ( argc != 2 ) {
         printf("Usage: server <1-5>\n");
         exit(0);
@@ -46,7 +54,7 @@ int main(int argc, char **argv)
     sprintf( Server, "server" );
     sprintf( Spread_name, "10050"); //always connects to my port
     strncat( Server, argv[1], 1 );
-    sprintf( Private_group, argv[1] ); //init
+    sprintf( Private_group, argv[1] );
     
     /* connect to SPREAD */ 
     int ret;
@@ -57,7 +65,6 @@ int main(int argc, char **argv)
     }
     printf("\n\t>Server: connected to %s with private group %s\n", Spread_name, Private_group );
     
-    
     //joins its own public group
     ret = SP_join( Mbox, Server );
     if ( ret < 0 ) SP_error( ret );
@@ -65,6 +72,9 @@ int main(int argc, char **argv)
     //joins the network group with all servers in it
     ret = SP_join( Mbox, "all_servers");
     if ( ret < 0 ) SP_error( ret );
+
+    updates_window_init(); 
+    //print_repo(updates_window[0]);
     
     E_init();
     E_attach_fd( Mbox, READ_FD, Read_message, 0, NULL, HIGH_PRIORITY ); 
@@ -80,8 +90,7 @@ static void Send_message()
 
 static void Read_message()
 {
-    printf("Read_message()\n");
-    static  char    mess[sizeof(update)]; //the biggest it can be ...
+    static  char    mess[sizeof(update)]; 
     char		    sender[MAX_GROUP_NAME];
     char            target_groups[MAX_SERVERS][MAX_GROUP_NAME];
     membership_info memb_info;
@@ -103,12 +112,10 @@ static void Read_message()
     {
         printf("\nregular msg\n");
         mess[ret] = 0;
-        printf("mess_typ = %d", mess_type);
         switch ( mess_type )
         {
             case 0: ; 
-                printf("case 0\n");
-                //join the group server_client
+                //joins the group server_client
                 char *msg = (char*)mess;
                 //joins the group server_client
                 char sc_group[MAX_MESSLEN];
@@ -123,16 +130,12 @@ static void Read_message()
                 //create a new update/fill its data
                 updates_sent++;
                 new_update->type = 1; //new email
-                new_update->server = server_index;
-                new_update->sequence_num = updates_sent;
+                new_update->id = unique_id;
+                unique_id->server = server_index;
+                unique_id->sequence_num = updates_sent;
 
                 email *new_email = (email*)malloc(sizeof(email)); 
                 new_email = (email*)mess;
-                printf("\nnew_email->to = %s", new_email->to);
-                printf("new_email->subject = %s", new_email->subject);
-                printf("new_email->message = %s", new_email->message);
-                printf("new_email->sender = %s\n", new_email->sender);
-              
                 new_update->email_ = *new_email;
                 
                 printf("\nnew_update->email_.to = %s", new_update->email_.to);
@@ -151,15 +154,38 @@ static void Read_message()
                     perror("fopen");
                     exit(0);
                 }
+                
+                printf("seq_num = %d, server_index = %d", new_update->id->server, new_update->id->sequence_num);
+
                 //write to the top of the file
                 //fprintf(fw,"new email: %d. %d", new_update->server, new_update->sequence_num); //server, sequence_num : to, subject, msg, sender
                 //TODO: DOES NOT WRITE TO THE FILE ...
                 int i = 10;
                 fprintf(fw, "new email: %d\n", i);
+                
+
+                //TODO: apply the update
+                //adds new_update to our linked list in updates_window
+                ret = repo_insert(updates_window[server_index-1], new_update);
+                if (ret == -1) //error
+                    printf("error");
+                print_repo(updates_window[server_index-1]);
+                
+                //update our status_matrix to our seq_num,server_index (unique_id)
+                status_matrix[server_index-1][server_index-1] = unique_id;
+                
+                //multicast the update to all_servers group
+                ret = SP_multicast(Mbox, AGREED_MESS, "all_servers", 5, sizeof(update), (char*)(new_update));
+                //^^not yet tested
+
                 break;
         
             case 2: ;
                 printf("\ncase 2");
+                break;
+
+            case 5: ;
+                printf("\ncase 5: received an udpate from server on all servers group");
                 break;
 
             default:
@@ -242,10 +268,56 @@ static void request_mailbox(char *client)
 //    int ret = SP_multicast(Mbox, AGREED_MESS,
 }
 
+/* init the updates_window: array of 5 linked lists */
+static void updates_window_init()
+{
+    //TODO: create a func to free all sentinel nodes before ending program
+    printf("\ninit update_window");
+
+    for (int i = 0; i < MAX_SERVERS; i++) {
+        linkedList *new_list;
+        new_list = malloc(sizeof(linkedList));
+        
+        node *sentinel;
+        sentinel = malloc(sizeof(node));
+        sentinel->update = NULL;
+        sentinel->nxt = NULL;
+        
+        new_list->sentinel = sentinel;
+        updates_window[i] = new_list; 
+    }
+}
+
+//returns -1 if something went wrong while inserting new node/update
+int repo_insert(linkedList *l, update* u)
+{
+    node *pnode;
+    pnode = malloc(sizeof(node));
+    if( pnode == NULL ) return -1;
+
+    pnode->update = u;
+    pnode->nxt = l->sentinel->nxt;
+    l->sentinel->nxt = pnode;
+    return 0;
+}
+
+//prints the updates in the linked list
+void print_repo(linkedList *l)
+{
+    if(l->sentinel->nxt == NULL) return;
+    node *ptemp = l->sentinel;
+    do {
+        ptemp = ptemp->nxt;
+        printf("\nseq_num=%d, server=%d", ptemp->update->id->sequence_num, ptemp->update->id->server);
+    } while(ptemp->nxt != NULL);
+
+}
+
 static void Bye()
 {
     To_exit = 1;
     free(new_update);
+    free(unique_id);
     printf("\nBye.\n");
     //E_detach_fd( Mbox, READ_FD ); 
     SP_disconnect( Mbox );
