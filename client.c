@@ -142,6 +142,8 @@ static void User_command()
             //get the recipient/to, subject, & msg
             printf("\n\tto: ");
             fgets(new_msg->to,MAX_USERNAME,stdin);
+            //gets rid of '\n' in new_msg
+            new_msg->to[strcspn(new_msg->to,"\n")] = 0;
             printf("\n\tsubject: ");
             fgets(new_msg->subject,BYTES,stdin);
             printf("\n\tmessage: ");

@@ -121,39 +121,42 @@ static void Read_message()
             case 1: ;
                 //1 = new email from a client  
                 //create a new update/fill its data
-                /*
+                updates_sent++;
                 new_update->type = 1; //new email
                 new_update->server = server_index;
-                updates_sent++;
                 new_update->sequence_num = updates_sent;
-                */
 
                 email *new_email = (email*)malloc(sizeof(email)); 
                 new_email = (email*)mess;
-                
                 printf("\nnew_email->to = %s", new_email->to);
                 printf("new_email->subject = %s", new_email->subject);
                 printf("new_email->message = %s", new_email->message);
                 printf("new_email->sender = %s\n", new_email->sender);
-               
-                break;
-
-                /*
+              
                 new_update->email_ = *new_email;
                 
-                char filename[] = "/tmp/ts_";
-                strcat(filename, &sc);
-                strcat(filename, new_email->to);
+                printf("\nnew_update->email_.to = %s", new_update->email_.to);
+                printf("\nnew_update->email_.subject = %s", new_update->email_.subject);
+                printf("new_update->email_.message = %s", new_update->email_.message);
+                printf("new_update->email_.sender = %s\n", new_update->email_.sender);
 
                 //write the new email to our log/file for that users email file
-                if ( (fw = fopen( (strcat(filename,"emails.txt") ) , "w") ) == NULL ) {
+                //char filename[] = "/tmp/ts_";
+                char filename[MAX_USERNAME*2]; //size?
+                sprintf(filename, &sc);
+                strcat(filename, new_email->to);
+                char endtxt[11];
+                strcpy(endtxt,"emails.txt");
+                if ( (fw = fopen( ( strcat(filename, endtxt) ) , "w") ) == NULL ) {
                     perror("fopen");
                     exit(0);
                 }
                 //write to the top of the file
-                fprintf(fw,"%d %d", new_update->server, new_update->sequence_num); //server, sequence_num : to, subject, msg, sender
-                */
-                //break;
+                //fprintf(fw,"new email: %d. %d", new_update->server, new_update->sequence_num); //server, sequence_num : to, subject, msg, sender
+                //TODO: DOES NOT WRITE TO THE FILE ...
+                int i = 10;
+                fprintf(fw, "new email: %d\n", i);
+                break;
         
             case 2: ;
                 printf("\ncase 2");
