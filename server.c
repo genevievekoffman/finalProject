@@ -103,7 +103,6 @@ static void Read_message()
     unsigned int    my_vsset_index;
     char            members[MAX_SERVERS][MAX_GROUP_NAME];
     int             ret;
-    
     sc = (server_index + '0'); 
 
     ret = SP_receive( Mbox, &service_type, sender, 10, &num_groups, target_groups, &mess_type, &endian_mismatch, sizeof(mess), mess);
@@ -125,9 +124,8 @@ static void Read_message()
                 if ( ret < 0 ) SP_error( ret ); 
                 break;
                 
-            case 1: ;
-                //1 = new email from a client  
-                //create a new update/fill its data
+            case 1: ; //new email from a client  
+                //creates a new update
                 updates_sent++;
                 new_update->type = 1; //new email
                 new_update->id = unique_id;
@@ -145,25 +143,20 @@ static void Read_message()
 
                 //write the new email to our log/file for that users email file
                 //char filename[] = "/tmp/ts_";
-                char filename[MAX_USERNAME*2]; //size?
+                char filename[MAX_USERNAME+11]; //size? maxusername + 1(serverindex) + 10(emails.txt) = + 11
                 sprintf(filename, &sc);
                 strcat(filename, new_email->to);
                 char endtxt[11];
                 strcpy(endtxt,"emails.txt");
-                if ( (fw = fopen( ( strcat(filename, endtxt) ) , "w") ) == NULL ) {
+                if ( (fw = fopen( ( strcat(filename, endtxt) ) , "a") ) == NULL ) { //a appends instead of overwriting the file
                     perror("fopen");
                     exit(0);
                 }
+                ret = fprintf(fw, "%d %d: to:%s sub:%s msg:%s sender:%s\n", new_update->id->server, new_update->id->sequence_num, new_update->email_.to, new_update->email_.subject, new_update->email_.message, new_update->email_.sender);
+                if ( ret < 0 )
+                    printf("fprintf error");
+                fclose(fw);
                 
-                printf("seq_num = %d, server_index = %d", new_update->id->server, new_update->id->sequence_num);
-
-                //write to the top of the file
-                //fprintf(fw,"new email: %d. %d", new_update->server, new_update->sequence_num); //server, sequence_num : to, subject, msg, sender
-                //TODO: DOES NOT WRITE TO THE FILE ...
-                int i = 10;
-                fprintf(fw, "new email: %d\n", i);
-                
-
                 //TODO: apply the update
                 //adds new_update to our linked list in updates_window
                 ret = repo_insert(updates_window[server_index-1], new_update);
@@ -177,15 +170,27 @@ static void Read_message()
                 //multicast the update to all_servers group
                 ret = SP_multicast(Mbox, AGREED_MESS, "all_servers", 5, sizeof(update), (char*)(new_update));
                 //^^not yet tested
-
                 break;
         
             case 2: ;
                 printf("\ncase 2");
                 break;
 
+            case 4: ;
+                //received a mailbox request from client
+                char *client = (char*)mess;
+                printf("client is %s", client);
+                break;
+
             case 5: ;
                 printf("\ncase 5: received an udpate from server on all servers group");
+                //ignore update if it's from ourself
+                //sender[7] is the index ~ #server1#ugrad8
+                if ( server_index == sender[7] ) break;
+    
+
+                //First: save this update to the servers log file
+
                 break;
 
             default:
@@ -239,23 +244,29 @@ static void Read_message()
 
 }
 
-/*when a client requests to see their mail, client is the name of the user logged in*/
+/* creates an array of cells filled with a users emails and sends it to the client */
 static void request_mailbox(char *client)
 {
-    cell new_window[20];
+    cell *new_window[20];
     int sn = 1; //goes up to 20
     FILE *fr; //pointer to file for reading 
     
     sc = (server_index + '0'); 
     
-    char filename[] = "/tmp/ts_";
+    //char filename[] = "/tmp/ts_";
+    char filename[MAX_USERNAME+11]; //size? maxusername + 1(serverindex) + 10(emails.txt) = + 11
     strcat(filename, &sc);
     strcat(filename, client);
-    
-    while ( sn <= 20 ) { 
+    char endtxt[11];
+    strcpy(endtxt,"emails.txt");
         //open their emails file 
+    if ( (fr = fopen( ( strcat(filename, endtxt) ) , "r") ) == NULL ) { 
+        perror("fopen");
+        exit(0);
+    }
+   
+    while ( sn <= 20 ) { 
         if ( (fr = fopen( (strcat(filename,"emails.txt") ) , "r") ) == NULL ) {
-            //nothing to read
             //new_window[0] = NULL;
             break;
         }

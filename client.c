@@ -15,7 +15,7 @@ static char Spread_name[80];
 static int To_exit = 0;
 static mailbox Mbox;
 static char Private_group[MAX_GROUP_NAME];
-static char curr_server[10]; //server currently connected to "server#" 
+static char curr_server[7]; //server currently connected to "server#" 
 static char curr_client[MAX_USERNAME]; 
 static void Bye();
 static void Read_message();
@@ -55,6 +55,7 @@ int main( int argc, char *argv[] )
 
 static void User_command()
 {
+    printf("curr_client @ user_command() = %s\n",curr_client);
     char command[130];
 
     for(int i = 0; i < sizeof(command); i++) command[i] = 0;
@@ -62,12 +63,9 @@ static void User_command()
 
     switch (command[0])
     {
-        case 'u': ;
-            /*NEED TO CONNECT TO A DEFAULT SERVER WHEN LOGGING IN...*/
-
-            //logging in
+        case 'u': ; //logging in
             char username[MAX_USERNAME];
-            int ret = sscanf( &command[2], "%s", username );
+            int ret = sscanf( &command[2], "%s", username);
             if ( ret < 1 ) {
                 printf("\ninvalid username\n");
                 break;
@@ -75,17 +73,21 @@ static void User_command()
 
             //TODO: add further check on if user is already logged in
             sprintf(curr_client, username);
-
+            printf("cc: %s", curr_client);
             //creates its own group username
-            ret = SP_join(Mbox, username);
+            ret = SP_join(Mbox, curr_client);
             if ( ret < 0 ) SP_error( ret );
             logged_in = 1;
             //TODO: must request the data from server to fill data structure
-
+            
+            //printf("\nusername = %s", username);
+            printf("\ncurr_client = %s", curr_client);
+            fflush(0);
             break;
 
         case 'c': ;
-            strncpy(curr_server, "server", MAX_GROUP_NAME); //resets the server name
+            printf("\ndebugging, line 89, curr_client = %s\n", curr_client);
+            strncpy(curr_server, "server", 7); //resets curr_server to "server "
             //connecting to a mail server
             if ( logged_in == 0 ) {
                 printf("\n...no user logged in ... \n");
@@ -100,7 +102,6 @@ static void User_command()
                 printf("\ninvalid server number\n");
                 break;
             }
-
             //joins the server_client group: 1genkoffman
             strncat( server, curr_client, sizeof(curr_client) );
             ret = SP_join(Mbox, server);
@@ -109,7 +110,7 @@ static void User_command()
             //requests to connect with that server
             ret = SP_multicast(Mbox, AGREED_MESS, curr_server, 0, sizeof(curr_client), curr_client);
             if ( ret < 0 ) SP_error( ret );
-            
+           
             //TODO: waits until it gets a membership notification that says the server joined the group
                 //then we can update the curr_server (connection etablished)
             //can we just set the curr_server or do we need to wait for connection join notification on that group ...
@@ -122,22 +123,22 @@ static void User_command()
                 break;
             }
 
+            printf("curr_client = %s", curr_client);
             email *new_msg;
             new_msg = (email*) malloc(sizeof(email));
             //get the recipient/to, subject, & msg
             printf("\n\tto: ");
             fgets(new_msg->to,MAX_USERNAME,stdin);
-            //gets rid of '\n' in new_msg
+            //gets rid of '\n' in new_msg->to 
             new_msg->to[strcspn(new_msg->to,"\n")] = 0;
             printf("\n\tsubject: ");
             fgets(new_msg->subject,BYTES,stdin);
+            new_msg->subject[strcspn(new_msg->subject,"\n")] = 0;
             printf("\n\tmessage: ");
             fgets(new_msg->message,MAX_MESSLEN,stdin);
+            new_msg->message[strcspn(new_msg->message,"\n")] = 0;
             sprintf(new_msg->sender, curr_client);
             printf("\nnew_msg->sender = %s", new_msg->sender);
-            printf("new_msg->to= %s", new_msg->to);
-            printf("new_msg->subject= %s", new_msg->subject);
-            printf("new_msg->msg = %s", new_msg->message);
             
             //sends new email to connected server
             ret = SP_multicast(Mbox, AGREED_MESS, curr_server, 1, sizeof(email), (char*)(new_msg));
@@ -151,7 +152,7 @@ static void User_command()
             test.contents = new_mail;
             client_window[0] = &test;
             */
-
+            printf("\ndone sending new email");
             break;
 
         case 'd': ;
@@ -187,12 +188,13 @@ static void User_command()
             break;
 
         case 'l': ;
-            printf("cmnd = l\n");
             //must be logged in
             if ( logged_in == 0 || connected() == -1 ) {
                 printf("\n\terror: either not logged in or no connection with server\n");
                 break;
             }
+            printf("curr_client = %s", curr_client);
+            fflush(0);
             ret = SP_multicast( Mbox, AGREED_MESS, curr_server, 4, sizeof(curr_client), curr_client);
 
             if ( ret < 0 ) {
