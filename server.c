@@ -9,6 +9,7 @@
 #include <time.h>
 
 #define MAX_VSSETS 10 //?what is this for
+#define MAX_LEN 256 //max line in file
 
 static int server_index; //unique server index
 static char Private_group[MAX_GROUP_NAME];
@@ -25,6 +26,7 @@ static void request_mailbox(char *client);
 static void updates_window_init();
 static int repo_insert(linkedList *l, update* u);
 void print_repo(linkedList *l);
+void print_window(window* w);
 
 static update *new_update;
 static id *unique_id;
@@ -143,7 +145,7 @@ static void Read_message()
 
                 //write the new email to our log/file for that users email file
                 //char filename[] = "/tmp/ts_";
-                char filename[MAX_USERNAME+11]; //size? maxusername + 1(serverindex) + 10(emails.txt) = + 11
+                char filename[MAX_USERNAME+11]; //maxusername + 1(serverindex) + 10(emails.txt) = + 11
                 sprintf(filename, &sc);
                 strcat(filename, new_email->to);
                 char endtxt[11];
@@ -152,7 +154,10 @@ static void Read_message()
                     perror("fopen");
                     exit(0);
                 }
-                ret = fprintf(fw, "%d %d: to:%s sub:%s msg:%s sender:%s\n", new_update->id->server, new_update->id->sequence_num, new_update->email_.to, new_update->email_.subject, new_update->email_.message, new_update->email_.sender);
+                //attempt to write email as a char pointer so i can cast backwards later ...
+                //ret = fprintf(fw, "%d %d email:%s\n", new_update->id->server, new_update->id->sequence_num, new_email); 
+                
+                ret = fprintf(fw, "%d %d|%s|%s|%s|%s\n", new_update->id->server, new_update->id->sequence_num, new_update->email_.to, new_update->email_.subject, new_update->email_.message, new_update->email_.sender); //server seq_num|to|subject|msg|sender
                 if ( ret < 0 )
                     printf("fprintf error");
                 fclose(fw);
@@ -179,7 +184,7 @@ static void Read_message()
             case 4: ;
                 //received a mailbox request from client
                 char *client = (char*)mess;
-                printf("client is %s", client);
+                request_mailbox(client);
                 break;
 
             case 5: ;
@@ -187,7 +192,6 @@ static void Read_message()
                 //ignore update if it's from ourself
                 //sender[7] is the index ~ #server1#ugrad8
                 if ( server_index == sender[7] ) break;
-    
 
                 //First: save this update to the servers log file
 
@@ -247,36 +251,81 @@ static void Read_message()
 /* creates an array of cells filled with a users emails and sends it to the client */
 static void request_mailbox(char *client)
 {
-    cell *new_window[20];
-    int sn = 1; //goes up to 20
+    window *new_window;
+    int sn = 1; 
     FILE *fr; //pointer to file for reading 
-    
     sc = (server_index + '0'); 
     
     //char filename[] = "/tmp/ts_";
-    char filename[MAX_USERNAME+11]; //size? maxusername + 1(serverindex) + 10(emails.txt) = + 11
-    strcat(filename, &sc);
-    strcat(filename, client);
+    char file[MAX_USERNAME+11] = ""; // maxusername + 1(serverindex) + 10(emails.txt) = + 11
+    strcat(file, &sc);
+    strcat(file, client);
     char endtxt[11];
     strcpy(endtxt,"emails.txt");
         //open their emails file 
-    if ( (fr = fopen( ( strcat(filename, endtxt) ) , "r") ) == NULL ) { 
-        perror("fopen");
-        exit(0);
-    }
-   
-    while ( sn <= 20 ) { 
-        if ( (fr = fopen( (strcat(filename,"emails.txt") ) , "r") ) == NULL ) {
-            //new_window[0] = NULL;
-            break;
-        }
-        //go to eof
-        //open serverindex_client_emails file
-        //unique id will be first
+    if ( (fr = fopen( ( strcat(file, endtxt) ) , "r") ) == NULL ) { 
+        new_window = NULL; //nothing in their mailbox
+        int ret = SP_multicast( Mbox, AGREED_MESS, client, 0, sizeof(window), (char*)new_window);
+        if (ret < 0 ) SP_error( ret );
+        return;
     }
 
+    new_window = malloc(sizeof(cell)*MAX_CELLS);
+
+    cell *new_cell;
+    id *id_;
+    email *email_;
+       
+    /* fills the email & id within this cell */
+    char buff[256]; //reads everyline into buff 
+    while ( sn <= 20 && fgets(buff, 256, fr))
+    {
+        //new cell
+        new_cell = (cell*)malloc(sizeof(cell));
+        new_cell->sn = sn;
+        new_cell->status = 'u'; //unread
+
+        //gets rid of the new line
+        buff[strcspn(buff,"\n")] = 0;
+    
+        email_ = (email*)malloc(sizeof(email));
+        id_ = (id*)malloc(sizeof(id));
+        char tkn[] = "|"; 
+        char *extract = strtok(buff, tkn);
+
+        int round = 0;
+        while(extract != NULL)
+        {
+            switch(round) {
+                case 0: ;
+                    id_->server = atoi(&extract[0]);
+                    id_->sequence_num = atoi(&extract[2]);
+                    break;
+                case 2: ;
+                    sprintf(email_->subject,extract);
+                    break;
+                case 3: ;
+                    sprintf(email_->message,extract);
+                    break;
+                case 4: ;
+                    sprintf(email_->sender,extract);
+                    break;
+            }
+            extract = strtok(NULL, tkn);
+            round++;
+        }
+        sprintf(email_->to,client);
+        new_cell->id = id_;
+        new_cell->mail = email_;
+        
+        //done creating new cell
+        new_window->window[sn-1] = new_cell;
+        sn++;
+    } 
+    printf("\nsn = %d", sn);
     //send the new_window to the client
-//    int ret = SP_multicast(Mbox, AGREED_MESS,
+    print_window(new_window);
+    int ret = SP_multicast(Mbox, AGREED_MESS, client, 0, sizeof(window), (char*)new_window);
 }
 
 /* init the updates_window: array of 5 linked lists */
@@ -321,6 +370,24 @@ void print_repo(linkedList *l)
         ptemp = ptemp->nxt;
         printf("\nseq_num=%d, server=%d", ptemp->update->id->sequence_num, ptemp->update->id->server);
     } while(ptemp->nxt != NULL);
+
+}
+
+//create a func that checks if two points to id are the same
+
+//prints contents of the window
+void print_window(window* w)
+{
+    cell *cell_;
+    printf("\tsn#\t<server,seq_num>\tsubject\tmessage\tfrom\n");
+    for ( int i = 0; i < MAX_CELLS; i++ ) {
+        cell_ = w->window[i];
+        if (cell_ == NULL) {
+            printf("\nno cell at window[%d]", i);
+        } else {
+            printf("\n\t%d\t<%d,%d>\t%s\t%s\t%s", cell_->sn, cell_->id->server, cell_->id->sequence_num, cell_->mail->subject, cell_->mail->message, cell_->mail->sender);
+        }
+    }
 
 }
 

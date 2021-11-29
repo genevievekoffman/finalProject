@@ -1,5 +1,3 @@
-//client program
-
 #include "sp.h"
 #include "structs.h"
 
@@ -7,25 +5,25 @@
 #include <stdlib.h>
 #include <string.h>
 
-
-static void print_emails();
-static void print_menu();
-static void User_command();
 static char Spread_name[80];
 static int To_exit = 0;
 static mailbox Mbox;
 static char Private_group[MAX_GROUP_NAME];
 static char curr_server[7]; //server currently connected to "server#" 
 static char curr_client[MAX_USERNAME]; 
+static int logged_in = 0; //1 means there is a use logged in (I didnt know how to check if currclient was null bc it doesnt work ...
+
 static void Bye();
 static void Read_message();
 static int connected();
-
-static int logged_in = 0; //1 means there is a use logged in (I didnt know how to check if currclient was null bc it doesnt work ...
+static void print_emails();
+static void print_menu();
+static void User_command();
 
 //static email *new_msg;
 
-static cell *client_window[20];
+//static cell *client_window[20];
+static window *client_window;
 
 int main( int argc, char *argv[] ) 
 {
@@ -55,7 +53,6 @@ int main( int argc, char *argv[] )
 
 static void User_command()
 {
-    printf("curr_client @ user_command() = %s\n",curr_client);
     char command[130];
 
     for(int i = 0; i < sizeof(command); i++) command[i] = 0;
@@ -132,7 +129,7 @@ static void User_command()
             //gets rid of '\n' in new_msg->to 
             new_msg->to[strcspn(new_msg->to,"\n")] = 0;
             printf("\n\tsubject: ");
-            fgets(new_msg->subject,BYTES,stdin);
+            fgets(new_msg->subject,MAX_USERNAME,stdin);
             new_msg->subject[strcspn(new_msg->subject,"\n")] = 0;
             printf("\n\tmessage: ");
             fgets(new_msg->message,MAX_MESSLEN,stdin);
@@ -143,16 +140,6 @@ static void User_command()
             //sends new email to connected server
             ret = SP_multicast(Mbox, AGREED_MESS, curr_server, 1, sizeof(email), (char*)(new_msg));
             if ( ret < 0 ) SP_error( ret );
-            
-            //just a test to see if print works
-            /*
-            cell test;
-            test.sn = 1;
-            test.status = 'u';
-            test.contents = new_mail;
-            client_window[0] = &test;
-            */
-            printf("\ndone sending new email");
             break;
 
         case 'd': ;
@@ -176,11 +163,12 @@ static void User_command()
             //sn is just i-1
             int sn = atoi(mailsn);
             printf("sn converted is %d\n", sn);
+            /*
             if ( client_window[sn-1] != NULL ) {
                 //set its status to delete
                 //send an update to server
 
-            }
+            }*/
                 
             break;
         case 'r': ;
@@ -202,10 +190,6 @@ static void User_command()
                 Bye();
             }
 
-            //now it needs to retreive an up to date mailbox from server
-            Read_message();
-            //testing
-            print_emails();
             break;
 
         default:
@@ -237,9 +221,17 @@ static void Read_message()
             case 0: ;
                 //only message they get is an array of size 20 filled with cells from curr_server
                 printf("case 0: we received a cell update");
-
-                //TODO: RECEIVE ARRAY OF CELLS AND UPDATE OUR LOCAL ONE
-
+                fflush(0);
+                window *test = malloc(sizeof(cell)*MAX_CELLS);
+                test = (window*)mess;
+                printf("sizeof(test->window)= %ld", sizeof(test->window));
+                cell *cell_test = malloc(sizeof(cell));
+                cell_test = test->window[0];
+                printf("232");
+                fflush(0);
+                //seg fault on line below
+                printf("\n\t>>sn = %d\n", cell_test->sn);
+                print_emails();
                 break;
             default: ;
                 printf("unkown ");
@@ -282,15 +274,17 @@ static void Read_message()
 /* prints out contents of client_window */
 static void print_emails()
 {
-    for( int i = 0; i < 20; i++ ) {
-        cell *email = client_window[i];
-        if(email == NULL) {
-            if (i == 0) printf("\tno mail");
+    printf("\nprinting emails");
+    fflush(0);
+    cell *cell_;
+    for( int i = 0; i < MAX_CELLS; i++ ) {
+        cell_ = client_window->window[i];
+        if(cell_ == NULL) {
+            printf("\tno mail");
             return;
+        } else {
+            printf("\n\t%d\t<%d,%d>\t%s\t%s\t%s", cell_->sn, cell_->id->server, cell_->id->sequence_num, cell_->mail->subject, cell_->mail->message, cell_    ->mail->sender);
         }
-        printf("\tsn=%d:", email->sn);
-        printf(" sender=%s", email->contents->sender);
-        printf(", subject=%s", email->contents->subject);
     }
 
 }

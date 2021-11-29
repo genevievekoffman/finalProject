@@ -1,11 +1,11 @@
-#define BYTES 20 
 #define MAX_MESSLEN 250 //since 250*4=1000 bytes
 #define MAX_SERVERS 5
 #define MAX_USERNAME 20
+#define MAX_CELLS 20
 
 typedef struct dummy_email {
     char to[MAX_USERNAME];
-    char subject[BYTES];
+    char subject[MAX_USERNAME];
     char message[MAX_MESSLEN]; 
     char sender[MAX_USERNAME];
 }email;
@@ -26,11 +26,13 @@ typedef struct dummy_update {
 typedef struct dummy_cell {
     int sn; //serial number 1-20
     char status; //'r', 'u', 'd'
-
-    //pointer to an email
-    email* contents;
-    struct dummy_id id;
+    email* mail; 
+    struct dummy_id *id;
 }cell;
+
+typedef struct dummy_window {
+    cell* window[MAX_CELLS]; //pointers to cells
+}window;
 
 typedef struct dummy_node{
     struct dummy_update *update; 
