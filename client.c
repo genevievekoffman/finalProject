@@ -20,9 +20,6 @@ static void print_emails();
 static void print_menu();
 static void User_command();
 
-//static email *new_msg;
-
-//static cell *client_window[20];
 static window *client_window;
 
 int main( int argc, char *argv[] ) 
@@ -43,6 +40,7 @@ int main( int argc, char *argv[] )
     printf("Client: connected to %s with private group %s\n", Spread_name, Private_group );
 
     print_menu();
+    client_window = malloc(sizeof(client_window));
     
     E_init();
     E_attach_fd( 0, READ_FD, User_command, 0, NULL, HIGH_PRIORITY); //users control has highest priority
@@ -171,7 +169,27 @@ static void User_command()
                 
             break;
         case 'r': ;
-            printf("cmnd = r\n");
+            //ASSUMPTION: client has already called 'l' so they know the serial numbers of mails
+            printf("~assumes 'l' has already been called (errors otherwise)\n");
+            //grab the id at that index in the clients window (ID)
+            //read the second character
+
+            char sn_[2]; //at most 2 bytes
+            ret = sscanf( &command[2], "%s", sn_);
+            if ( ret < 0 ) { //todo: add check that its between 1 & 20 
+                printf("Missing a serial number\n");
+                break;
+            }
+            printf("sn = %s\n", sn_);
+            //send a cell as the message (it has the ID && the email which has *the client name/to)
+            cell *temp_cell = &client_window->window[atoi(sn_)-1];
+            printf("\ngrabbed cell with id = <%d,%d>\n", temp_cell->mail_id.server, temp_cell->mail_id.sequence_num);
+            //check the status of the email -> if it's already read, no need to change anything or if it's deleted no need (only when status is 'u' proceed)
+            //update the status locally 
+            ret = SP_multicast(Mbox, AGREED_MESS, curr_server, 2, sizeof(cell), (char*)(temp_cell));
+            if ( ret < 0 ) SP_error( ret );
+            
+            //send the update to the server
             break;
 
         case 'l': ;
@@ -199,7 +217,7 @@ static void User_command()
 
 static void Read_message()
 {
-    static char    mess[MAX_MESSLEN];
+    static char    mess[sizeof(window)]; //reading windows at most
     char		   sender[MAX_GROUP_NAME];
     char           target_groups[MAX_SERVERS][MAX_GROUP_NAME];
     int            service_type;
@@ -219,10 +237,9 @@ static void Read_message()
         {
             case 0: ;
                 //only message they get is an array of size 20 filled with cells from curr_server
-                printf("case 0: we received a cell update");
-                fflush(0);
-                //window *test = malloc(sizeof(cell)*MAX_CELLS);
-                client_window= (window*)mess;
+                client_window = (window*)mess;
+                printf("size of mess = %ld\n", sizeof(mess));
+                printf("sn test: %d\n", client_window->window[0].sn);
                 print_emails();
                 break;
             default: ;
@@ -263,18 +280,20 @@ static void Read_message()
 
 }
 
+//issue: why does it print the last one after user has claled another cmnd
 /* prints out contents of client_window */
 static void print_emails()
 {
-    printf("\nprinting emails");
-    fflush(0);
+    printf("Mailbox of @%s\n", curr_client); 
+    printf("Connected to %s\n", curr_server);
+
     cell *cell_;
     for( int i = 0; i < MAX_CELLS; i++ ) {
         cell_ = &client_window->window[i];
-        if(cell_ == NULL) {
-            printf("\tno mail");
+        if(cell_->sn == 0) {
             return;
         } else {
+            //TODO: ONLY NEED TO PRINT THE SENDER & SUBJECT
             printf("\n\t%d\t<%d,%d>\t%s\t%s\t%s", cell_->sn, cell_->mail_id.server, cell_->mail_id.sequence_num, cell_->mail.subject, cell_->mail.message, cell_->mail.sender);
         }
     }
@@ -305,7 +324,7 @@ int connected()
 static void Bye()
 {
     To_exit = 1;
-    //free(new_msg);
+    free(client_window);
     printf("\nBye.\n");
     SP_disconnect( Mbox );
     exit(0);

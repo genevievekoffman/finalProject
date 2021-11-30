@@ -18,7 +18,7 @@ typedef struct dummy_id {
 typedef struct dummy_update {
     int type; //1 = new email, 2 = reading an email, 3 = deleting an email
     email email_; //null when type = 2 or 3
-    
+        //when type = 2 or 3 -> email_.to is the client that made the request! (open their file) 
     //following will !null when type = 2 or 3
     id mail_id; 
 }update;

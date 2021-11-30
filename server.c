@@ -107,10 +107,9 @@ static void Read_message()
         mess[ret] = 0;
         switch ( mess_type )
         {
-            case 0: ; 
+            case 0: ; //client connection request 
                 //joins the group server_client
                 char *msg = (char*)mess;
-                //joins the group server_client
                 char sc_group[MAX_MESSLEN];
                 sprintf(sc_group, &sc);
                 strcat(sc_group, msg);
@@ -129,8 +128,6 @@ static void Read_message()
                 new_update->email_ = *test_email;
                 //strcpy(*new_update->email_, (email*)mess);
                 
-                //TEST ABOVE
-                //
                 printf("\nnew_update->email_.to = %s", new_update->email_.to);
                 printf("\nnew_update->email_.subject = %s", new_update->email_.subject);
                 printf("new_update->email_.message = %s", new_update->email_.message);
@@ -147,9 +144,6 @@ static void Read_message()
                     perror("fopen");
                     exit(0);
                 }
-                //attempt to write email as a char pointer so i can cast backwards later ...
-                //ret = fprintf(fw, "%d %d email:%s\n", new_update->id->server, new_update->id->sequence_num, new_email); 
-                
                 ret = fprintf(fw, "%d %d|%s|%s|%s|%s\n", new_update->mail_id.server, new_update->mail_id.sequence_num, new_update->email_.to, new_update->email_.subject, new_update->email_.message, new_update->email_.sender); //server seq_num|to|subject|msg|sender
                 if ( ret < 0 )
                     printf("fprintf error");
@@ -167,11 +161,11 @@ static void Read_message()
                 
                 //multicast the update to all_servers group
                 ret = SP_multicast(Mbox, AGREED_MESS, "all_servers", 5, sizeof(update), (char*)(new_update));
-                //^^not yet tested
                 break;
         
-            case 2: ;
-                printf("\ncase 2");
+            case 2: ; //received a read request from client
+                printf("\ncase 2: received read request\n");
+                //mess will be a cell!
                 break;
 
             case 4: ;
@@ -191,7 +185,7 @@ static void Read_message()
                 update *new_update= (update*)mess;
                 printf("\nupdate type = %d", new_update->type);
                 printf("\nupdates_id = <%d,%d>", new_update->mail_id.server, new_update->mail_id.sequence_num);
-                printf("\nemail: \n\tto: %s \n\tsubject: %s message: %s \n\tfrom: %s", new_update->email_.to, new_update->email_.subject, new_update->email_.message, new_update->email_.sender);
+                printf("\nemail: \n\tto: %s \n\tsubject: %s \n\tmessage: %s \n\tfrom: %s", new_update->email_.to, new_update->email_.subject, new_update->email_.message, new_update->email_.sender);
                 //First: save this update to the servers log file
                 
                 //check the type of the update
@@ -244,7 +238,7 @@ static void Read_message()
 
 }
 
-/* creates an array of cells filled with a users emails and sends it to the client */
+/* creates a new window filled with cells and sends it to the client */
 static void request_mailbox(char *client)
 {
     window new_window;
@@ -259,14 +253,12 @@ static void request_mailbox(char *client)
     strcat(file, client);
     char endtxt[11];
     strcpy(endtxt,"emails.txt");
-        //open their emails file 
+    //open their emails file 
     if ( (fr = fopen( ( strcat(file, endtxt) ) , "r") ) == NULL ) {  //done reading emails from file or no emails
         int ret = SP_multicast( Mbox, AGREED_MESS, client, 0, sizeof(window), (char*)&new_window );
         if (ret < 0 ) SP_error( ret );
         return;
     }
-
-    //new_window = malloc(sizeof(cell)*MAX_CELLS);
 
     cell *new_cell;
        
@@ -309,10 +301,11 @@ static void request_mailbox(char *client)
         
         sn++;
     } 
-    printf("\nsn = %d", sn);
     //send the new_window to the client
     print_window(&new_window);
     int ret = SP_multicast(Mbox, AGREED_MESS, client, 0, sizeof(window), (char*)&new_window);
+    printf("sizeof(window) = %ld", sizeof(window));
+    printf("ret = %d", ret);
     if ( ret < 0 ) SP_error( ret ); 
 }
 
