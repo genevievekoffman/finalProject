@@ -20,12 +20,11 @@ static int To_exit = 0;
 static char sc;
 
 static void Read_message();
-static void Send_message();
 static void Bye();
 static void request_mailbox(char *client);
 static void updates_window_init();
 static int repo_insert(linkedList *l, update* u);
-void print_repo(linkedList *l);
+//void print_repo(linkedList *l);
 void print_window(window* w);
 
 static update *new_update;
@@ -83,13 +82,6 @@ int main(int argc, char **argv)
     E_handle_events();
 }
 
-static void Send_message() 
-{
-    printf("send message");
-
-
-}
-
 static void Read_message()
 {
     static  char    mess[sizeof(update)]; 
@@ -100,10 +92,10 @@ static void Read_message()
     int16           mess_type;
     int             endian_mismatch;
     int             num_groups;
-    vs_set_info     vssets[MAX_VSSETS];
-    int             num_vs_sets;
-    unsigned int    my_vsset_index;
-    char            members[MAX_SERVERS][MAX_GROUP_NAME];
+    //vs_set_info     vssets[MAX_VSSETS];
+    //int             num_vs_sets;
+    //unsigned int    my_vsset_index;
+    //char            members[MAX_SERVERS][MAX_GROUP_NAME];
     int             ret;
     sc = (server_index + '0'); 
 
@@ -130,14 +122,15 @@ static void Read_message()
                 //creates a new update
                 updates_sent++;
                 new_update->type = 1; //new email
-                new_update->id = unique_id;
-                unique_id->server = server_index;
-                unique_id->sequence_num = updates_sent;
-
-                email *new_email = (email*)malloc(sizeof(email)); 
-                new_email = (email*)mess;
-                new_update->email_ = *new_email;
+                new_update->mail_id.server = server_index;
+                new_update->mail_id.sequence_num = updates_sent;
+               
+                email *test_email = (email*)mess;
+                new_update->email_ = *test_email;
+                //strcpy(*new_update->email_, (email*)mess);
                 
+                //TEST ABOVE
+                //
                 printf("\nnew_update->email_.to = %s", new_update->email_.to);
                 printf("\nnew_update->email_.subject = %s", new_update->email_.subject);
                 printf("new_update->email_.message = %s", new_update->email_.message);
@@ -147,7 +140,7 @@ static void Read_message()
                 //char filename[] = "/tmp/ts_";
                 char filename[MAX_USERNAME+11]; //maxusername + 1(serverindex) + 10(emails.txt) = + 11
                 sprintf(filename, &sc);
-                strcat(filename, new_email->to);
+                strcat(filename, new_update->email_.to);
                 char endtxt[11];
                 strcpy(endtxt,"emails.txt");
                 if ( (fw = fopen( ( strcat(filename, endtxt) ) , "a") ) == NULL ) { //a appends instead of overwriting the file
@@ -157,7 +150,7 @@ static void Read_message()
                 //attempt to write email as a char pointer so i can cast backwards later ...
                 //ret = fprintf(fw, "%d %d email:%s\n", new_update->id->server, new_update->id->sequence_num, new_email); 
                 
-                ret = fprintf(fw, "%d %d|%s|%s|%s|%s\n", new_update->id->server, new_update->id->sequence_num, new_update->email_.to, new_update->email_.subject, new_update->email_.message, new_update->email_.sender); //server seq_num|to|subject|msg|sender
+                ret = fprintf(fw, "%d %d|%s|%s|%s|%s\n", new_update->mail_id.server, new_update->mail_id.sequence_num, new_update->email_.to, new_update->email_.subject, new_update->email_.message, new_update->email_.sender); //server seq_num|to|subject|msg|sender
                 if ( ret < 0 )
                     printf("fprintf error");
                 fclose(fw);
@@ -167,7 +160,7 @@ static void Read_message()
                 ret = repo_insert(updates_window[server_index-1], new_update);
                 if (ret == -1) //error
                     printf("error");
-                print_repo(updates_window[server_index-1]);
+                //print_repo(updates_window[server_index-1]);
                 
                 //update our status_matrix to our seq_num,server_index (unique_id)
                 status_matrix[server_index-1][server_index-1] = unique_id;
@@ -191,9 +184,19 @@ static void Read_message()
                 printf("\ncase 5: received an udpate from server on all servers group");
                 //ignore update if it's from ourself
                 //sender[7] is the index ~ #server1#ugrad8
-                if ( server_index == sender[7] ) break;
+                //if ( server_index == sender[7] ) break;
+                
+                //make sure we can print the update here:
 
+                update *new_update= (update*)mess;
+                printf("\nupdate type = %d", new_update->type);
+                printf("\nupdates_id = <%d,%d>", new_update->mail_id.server, new_update->mail_id.sequence_num);
+                printf("\nemail: \n\tto: %s \n\tsubject: %s message: %s \n\tfrom: %s", new_update->email_.to, new_update->email_.subject, new_update->email_.message, new_update->email_.sender);
                 //First: save this update to the servers log file
+                
+                //check the type of the update
+                //if it's a new email -> save the emails info to its log file
+                //if it's a read or delete -> save the unique id to corelating file
 
                 break;
 
@@ -229,13 +232,6 @@ static void Read_message()
                 printf("Due to the DISCONNECT of %s\n", memb_info.changed_member );
             } else if( Is_caused_network_mess( service_type ) )
             {
-                //below doesnt matter rn
-                if (num_vs_sets < 0)
-                {
-                    printf("BUG: membership message has more then %d vs sets. Recompile with larger MAX_VSSETS\n", MAX_VSSETS);
-                    SP_error( num_vs_sets );
-                    exit( 1 );
-                }
             }
         
         }else if (Is_transition_mess(   service_type ) ) {
@@ -251,7 +247,8 @@ static void Read_message()
 /* creates an array of cells filled with a users emails and sends it to the client */
 static void request_mailbox(char *client)
 {
-    window *new_window;
+    window new_window;
+    memset(&new_window, 0, sizeof(window)); //fill it with 0's
     int sn = 1; 
     FILE *fr; //pointer to file for reading 
     sc = (server_index + '0'); 
@@ -263,33 +260,27 @@ static void request_mailbox(char *client)
     char endtxt[11];
     strcpy(endtxt,"emails.txt");
         //open their emails file 
-    if ( (fr = fopen( ( strcat(file, endtxt) ) , "r") ) == NULL ) { 
-        new_window = NULL; //nothing in their mailbox
-        int ret = SP_multicast( Mbox, AGREED_MESS, client, 0, sizeof(window), (char*)new_window);
+    if ( (fr = fopen( ( strcat(file, endtxt) ) , "r") ) == NULL ) {  //done reading emails from file or no emails
+        int ret = SP_multicast( Mbox, AGREED_MESS, client, 0, sizeof(window), (char*)&new_window );
         if (ret < 0 ) SP_error( ret );
         return;
     }
 
-    new_window = malloc(sizeof(cell)*MAX_CELLS);
+    //new_window = malloc(sizeof(cell)*MAX_CELLS);
 
     cell *new_cell;
-    id *id_;
-    email *email_;
        
     /* fills the email & id within this cell */
     char buff[256]; //reads everyline into buff 
     while ( sn <= 20 && fgets(buff, 256, fr))
     {
-        //new cell
-        new_cell = (cell*)malloc(sizeof(cell));
+        new_cell = &new_window.window[sn-1];
         new_cell->sn = sn;
         new_cell->status = 'u'; //unread
 
         //gets rid of the new line
         buff[strcspn(buff,"\n")] = 0;
     
-        email_ = (email*)malloc(sizeof(email));
-        id_ = (id*)malloc(sizeof(id));
         char tkn[] = "|"; 
         char *extract = strtok(buff, tkn);
 
@@ -298,34 +289,31 @@ static void request_mailbox(char *client)
         {
             switch(round) {
                 case 0: ;
-                    id_->server = atoi(&extract[0]);
-                    id_->sequence_num = atoi(&extract[2]);
+                    new_cell->mail_id.server = atoi(&extract[0]);
+                    new_cell->mail_id.sequence_num = atoi(&extract[2]);
                     break;
                 case 2: ;
-                    sprintf(email_->subject,extract);
+                    sprintf(new_cell->mail.subject,extract);
                     break;
                 case 3: ;
-                    sprintf(email_->message,extract);
+                    sprintf(new_cell->mail.message,extract);
                     break;
                 case 4: ;
-                    sprintf(email_->sender,extract);
+                    sprintf(new_cell->mail.sender,extract);
                     break;
             }
             extract = strtok(NULL, tkn);
             round++;
         }
-        sprintf(email_->to,client);
-        new_cell->id = id_;
-        new_cell->mail = email_;
+        sprintf(new_cell->mail.to,client);
         
-        //done creating new cell
-        new_window->window[sn-1] = new_cell;
         sn++;
     } 
     printf("\nsn = %d", sn);
     //send the new_window to the client
-    print_window(new_window);
-    int ret = SP_multicast(Mbox, AGREED_MESS, client, 0, sizeof(window), (char*)new_window);
+    print_window(&new_window);
+    int ret = SP_multicast(Mbox, AGREED_MESS, client, 0, sizeof(window), (char*)&new_window);
+    if ( ret < 0 ) SP_error( ret ); 
 }
 
 /* init the updates_window: array of 5 linked lists */
@@ -362,16 +350,18 @@ int repo_insert(linkedList *l, update* u)
 }
 
 //prints the updates in the linked list
+/*
 void print_repo(linkedList *l)
 {
     if(l->sentinel->nxt == NULL) return;
     node *ptemp = l->sentinel;
     do {
         ptemp = ptemp->nxt;
-        printf("\nseq_num=%d, server=%d", ptemp->update->id->sequence_num, ptemp->update->id->server);
+        printf("\nseq_num=%d, server=%d", ptemp->update->mail_id->sequence_num, ptemp->update->id->server);
     } while(ptemp->nxt != NULL);
 
 }
+*/
 
 //create a func that checks if two points to id are the same
 
@@ -381,11 +371,11 @@ void print_window(window* w)
     cell *cell_;
     printf("\tsn#\t<server,seq_num>\tsubject\tmessage\tfrom\n");
     for ( int i = 0; i < MAX_CELLS; i++ ) {
-        cell_ = w->window[i];
+        cell_ = &w->window[i];
         if (cell_ == NULL) {
             printf("\nno cell at window[%d]", i);
         } else {
-            printf("\n\t%d\t<%d,%d>\t%s\t%s\t%s", cell_->sn, cell_->id->server, cell_->id->sequence_num, cell_->mail->subject, cell_->mail->message, cell_->mail->sender);
+            printf("\n\t%d\t<%d,%d>\t%s\t%s\t%s", cell_->sn, cell_->mail_id.server, cell_->mail_id.sequence_num, cell_->mail.subject, cell_->mail.message, cell_->mail.sender);
         }
     }
 

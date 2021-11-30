@@ -20,18 +20,18 @@ typedef struct dummy_update {
     email email_; //null when type = 2 or 3
     
     //following will !null when type = 2 or 3
-    struct dummy_id *id; 
+    id mail_id; 
 }update;
 
 typedef struct dummy_cell {
     int sn; //serial number 1-20
     char status; //'r', 'u', 'd'
-    email* mail; 
-    struct dummy_id *id;
+    email mail; 
+    id mail_id;
 }cell;
 
 typedef struct dummy_window {
-    cell* window[MAX_CELLS]; //pointers to cells
+    cell window[MAX_CELLS]; 
 }window;
 
 typedef struct dummy_node{

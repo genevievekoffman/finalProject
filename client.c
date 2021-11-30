@@ -83,7 +83,6 @@ static void User_command()
             break;
 
         case 'c': ;
-            printf("\ndebugging, line 89, curr_client = %s\n", curr_client);
             strncpy(curr_server, "server", 7); //resets curr_server to "server "
             //connecting to a mail server
             if ( logged_in == 0 ) {
@@ -222,15 +221,8 @@ static void Read_message()
                 //only message they get is an array of size 20 filled with cells from curr_server
                 printf("case 0: we received a cell update");
                 fflush(0);
-                window *test = malloc(sizeof(cell)*MAX_CELLS);
-                test = (window*)mess;
-                printf("sizeof(test->window)= %ld", sizeof(test->window));
-                cell *cell_test = malloc(sizeof(cell));
-                cell_test = test->window[0];
-                printf("232");
-                fflush(0);
-                //seg fault on line below
-                printf("\n\t>>sn = %d\n", cell_test->sn);
+                //window *test = malloc(sizeof(cell)*MAX_CELLS);
+                client_window= (window*)mess;
                 print_emails();
                 break;
             default: ;
@@ -278,12 +270,12 @@ static void print_emails()
     fflush(0);
     cell *cell_;
     for( int i = 0; i < MAX_CELLS; i++ ) {
-        cell_ = client_window->window[i];
+        cell_ = &client_window->window[i];
         if(cell_ == NULL) {
             printf("\tno mail");
             return;
         } else {
-            printf("\n\t%d\t<%d,%d>\t%s\t%s\t%s", cell_->sn, cell_->id->server, cell_->id->sequence_num, cell_->mail->subject, cell_->mail->message, cell_    ->mail->sender);
+            printf("\n\t%d\t<%d,%d>\t%s\t%s\t%s", cell_->sn, cell_->mail_id.server, cell_->mail_id.sequence_num, cell_->mail.subject, cell_->mail.message, cell_->mail.sender);
         }
     }
 
