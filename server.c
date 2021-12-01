@@ -33,6 +33,8 @@ static update *new_update;
 static id *unique_id;
 static int updates_sent; //sequence num
 FILE *fw;
+FILE* fw2;
+static request *temp_req; 
 
 //an array of pointers to Linked lists
 static linkedList* updates_window[MAX_SERVERS]; 
@@ -158,8 +160,7 @@ static void Read_message()
                 updates_sent++;
                 new_update->sequence_num = updates_sent; //it would be server, seq num
                 new_update->type = 2; //read an email request
-                
-                request *temp_req = (request*)mess;
+                temp_req = (request*)mess;
                 new_update->mail_id = temp_req->mail_id;
 
                 strcpy(new_update->email_.to, temp_req->user);
@@ -170,12 +171,10 @@ static void Read_message()
                 
                 char fn[MAX_USERNAME+11] = "";
                 get_filename(fn, new_update->email_.to, 1); //1=reads.txt
-                FILE* fw2;
                 if ( ( fw2 = fopen(fn, "a") ) == NULL ) {
                     perror("fopen");
                     exit(0);
                 }
-
                 //write the emails id in here
                 ret = fprintf(fw2, "%d %d\n", new_update->mail_id.server, new_update->mail_id.sequence_num);
                 if ( ret < 0 )
@@ -193,43 +192,35 @@ static void Read_message()
                     exit(0);
                 }
                 */
-                /* my attempt to change the 'u' to 'r' in a file
-                //get line by line
-                //read the first char of each line (id) 
-                //if the id matches, then this is the line we will edit!
-
-                char buff[256]; //reads everyline into buff 
-                FILE* behind_fr = fopen(fn, "r+"); 
-                behind_fr = fwr; //one line behind
-                while ( fgets(buff, 256, fwr) )
-                {
-                    printf("\n>%s",buff);
-                    printf("\nbuff[0] = %c",buff[0]);
-                    printf("temp_req->mail_id.server = %d", temp_req->mail_id.server);
-                   
-                    if ( atoi(&buff[0]) == temp_req->mail_id.server ) {
-                        char tkn[] = "|"; 
-                        char *extract = strtok(&buff[2], tkn); //buff[2] starts the sequence_num
-                        printf("extract = %s\n",extract);
-                        if(atoi(extract) == temp_req->mail_id.sequence_num) //found the email
-                        {
-                            printf("buff now = %s\n", buff);
-                            //move behind_fr to the last char of that line
-                            char c;
-                            do {
-                                c = (char)fgetc(behind_fr);
-                                printf("%c",c);
-                            } while(c != EOF);
-                       } 
-                    }
-                    behind_fr = fwr;
-                }
-                */
-                //go to the last char and change it to a 'r'
                 //apply the update
                 
                 break;
 
+            case 3: ; //received a delete request from client
+                updates_sent++;
+                new_update->sequence_num = updates_sent; //it would be server, seq num
+                new_update->type = 3; //delete an email request
+                temp_req = (request*)mess;
+                new_update->mail_id = temp_req->mail_id;
+                
+                strcpy(new_update->email_.to, temp_req->user);
+                printf("\ncells to = %s",new_update->email_.to);
+                printf("\ncells unique_id = <%d,%d>\n",new_update->mail_id.server,new_update->mail_id.sequence_num);
+                
+                char fn_[MAX_USERNAME+11] = "";
+                get_filename(fn_, new_update->email_.to, 2); //2=deletes.txt
+                if ( ( fw2 = fopen(fn_, "a") ) == NULL ) {
+                    perror("fopen");
+                    exit(0);
+                }
+                //write the emails id in here
+                ret = fprintf(fw2, "%d %d\n", new_update->mail_id.server, new_update->mail_id.sequence_num);
+                if ( ret < 0 )
+                    printf("fprintf error");
+                fclose(fw2);
+                
+                break;
+            
             case 4: ;
                 //received a mailbox request from client
                 char *client = (char*)mess;

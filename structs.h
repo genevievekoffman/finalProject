@@ -17,11 +17,18 @@ typedef struct dummy_id {
 
 typedef struct dummy_update {
     int type; //1 = new email, 2 = reading an email, 3 = deleting an email
-    email email_; //null when type = 2 or 3
-        //when type = 2 or 3 -> email_.to is the client that made the request! (open their file) 
+    email email_; 
+        //when type = 2 or 3 -> email_.to is the client that made the request! (open their file)  
     //following will !null when type = 2 or 3
     id mail_id; 
+    int sequence_num; //added this to handle sending an update holding read/delete requests (this is the servers seq num)
 }update;
+
+//client -> server used for read & delete requests
+typedef struct dummy_request {
+    id mail_id; //id of the update that created that email (aka id of email)
+    char user[MAX_USERNAME]; //the recipient of the email/requested this action
+}request;
 
 typedef struct dummy_cell {
     int sn; //serial number 1-20

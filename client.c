@@ -19,6 +19,7 @@ static int connected();
 static void print_emails();
 static void print_menu();
 static void User_command();
+static void fill_request(request *req, int sn);
 
 static window *client_window;
 
@@ -140,56 +141,43 @@ static void User_command()
             break;
 
         case 'd': ;
-            
-            printf("cmnd = d\n");
+            //ASSUMPTION: client has already called 'l' so they know the serial numbers of mails
             if (logged_in == 0) {
                 printf("\n...no user logged in ... \n");
                 break;
             }
 
-            char mailsn[5];
-        
+            char mailsn[2];
             ret = sscanf( &command[2], "%s", mailsn );
             if (ret < 1 || ret > 2) {
                 printf("\ninvalid serial number\n");
                 break;
             }
-            //can be an int 1-20
             
-            //grab the emails id with sn: mailsn
-            //sn is just i-1
-            int sn = atoi(mailsn);
-            printf("sn converted is %d\n", sn);
-            /*
-            if ( client_window[sn-1] != NULL ) {
-                //set its status to delete
-                //send an update to server
-
-            }*/
-                
+            request req_;
+            fill_request(&req_,atoi(mailsn));
+            
+            ret = SP_multicast(Mbox, AGREED_MESS, curr_server, 3, sizeof(request), (char*)(&req_));
+            if ( ret < 0 ) SP_error( ret );
+            
             break;
+        
         case 'r': ;
             //ASSUMPTION: client has already called 'l' so they know the serial numbers of mails
-            printf("~assumes 'l' has already been called (errors otherwise)\n");
-            //grab the id at that index in the clients window (ID)
-            //read the second character
-
+            if (logged_in == 0) {
+                printf("\n...no user logged in ... \n");
+                break;
+            }
+            
             char sn_[2]; //at most 2 bytes
             ret = sscanf( &command[2], "%s", sn_);
             if ( ret < 0 ) { //todo: add check that its between 1 & 20 
                 printf("Missing a serial number\n");
                 break;
             }
-            printf("sn = %s\n", sn_);
-            //send a cell as the message (it has the ID && the email which has *the client name/to)
-            cell *temp_cell = &client_window->window[atoi(sn_)-1];
-            printf("\ngrabbed cell with id = <%d,%d>\n", temp_cell->mail_id.server, temp_cell->mail_id.sequence_num);
-            //check the status of the email -> if it's already read, no need to change anything or if it's deleted no need (only when status is 'u' proceed)
-            //update the status locally 
+           
             request req;
-            strcpy(req.user, curr_client);
-            req.mail_id.server = temp_cell->mail_id.server;
-            req.mail_id.sequence_num = temp_cell->mail_id.sequence_num;
+            fill_request(&req,atoi(sn_));
 
             ret = SP_multicast(Mbox, AGREED_MESS, curr_server, 2, sizeof(request), (char*)(&req));
             if ( ret < 0 ) SP_error( ret );
@@ -300,6 +288,16 @@ static void print_emails()
         }
     }
 
+}
+
+//fills the information within the request type
+static void fill_request(request *req, int sn)
+{
+    cell *temp_cell = &client_window->window[sn-1];
+    printf("\ngrabbed cell with id = <%d,%d>\n", temp_cell->mail_id.server, temp_cell->mail_id.sequence_num);
+    strcpy(req->user, curr_client);
+    req->mail_id.server = temp_cell->mail_id.server;
+    req->mail_id.sequence_num = temp_cell->mail_id.sequence_num;
 }
 
 static void print_menu()
