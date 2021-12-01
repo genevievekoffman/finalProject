@@ -186,7 +186,12 @@ static void User_command()
             printf("\ngrabbed cell with id = <%d,%d>\n", temp_cell->mail_id.server, temp_cell->mail_id.sequence_num);
             //check the status of the email -> if it's already read, no need to change anything or if it's deleted no need (only when status is 'u' proceed)
             //update the status locally 
-            ret = SP_multicast(Mbox, AGREED_MESS, curr_server, 2, sizeof(cell), (char*)(temp_cell));
+            request req;
+            strcpy(req.user, curr_client);
+            req.mail_id.server = temp_cell->mail_id.server;
+            req.mail_id.sequence_num = temp_cell->mail_id.sequence_num;
+
+            ret = SP_multicast(Mbox, AGREED_MESS, curr_server, 2, sizeof(request), (char*)(&req));
             if ( ret < 0 ) SP_error( ret );
             
             //send the update to the server
@@ -236,10 +241,7 @@ static void Read_message()
         switch ( mess_type )
         {
             case 0: ;
-                //only message they get is an array of size 20 filled with cells from curr_server
                 client_window = (window*)mess;
-                printf("size of mess = %ld\n", sizeof(mess));
-                printf("sn test: %d\n", client_window->window[0].sn);
                 print_emails();
                 break;
             default: ;
@@ -294,7 +296,7 @@ static void print_emails()
             return;
         } else {
             //TODO: ONLY NEED TO PRINT THE SENDER & SUBJECT
-            printf("\n\t%d\t<%d,%d>\t%s\t%s\t%s", cell_->sn, cell_->mail_id.server, cell_->mail_id.sequence_num, cell_->mail.subject, cell_->mail.message, cell_->mail.sender);
+            printf("\n\t%d\t<%d,%d>\t%s\t%s\t%s\n\t%c\n", cell_->sn, cell_->mail_id.server, cell_->mail_id.sequence_num, cell_->mail.subject, cell_->mail.message, cell_->mail.sender, cell_->status);
         }
     }
 

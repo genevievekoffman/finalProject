@@ -26,7 +26,9 @@ static void updates_window_init();
 static int repo_insert(linkedList *l, update* u);
 //void print_repo(linkedList *l);
 void print_window(window* w);
+static int check_status(id *id_, char *file);
 
+static void get_filename(char *fn, char *client, int r);
 static update *new_update;
 static id *unique_id;
 static int updates_sent; //sequence num
@@ -92,15 +94,12 @@ static void Read_message()
     int16           mess_type;
     int             endian_mismatch;
     int             num_groups;
-    //vs_set_info     vssets[MAX_VSSETS];
-    //int             num_vs_sets;
-    //unsigned int    my_vsset_index;
-    //char            members[MAX_SERVERS][MAX_GROUP_NAME];
     int             ret;
     sc = (server_index + '0'); 
 
     ret = SP_receive( Mbox, &service_type, sender, 10, &num_groups, target_groups, &mess_type, &endian_mismatch, sizeof(mess), mess);
 
+    
     if ( Is_regular_mess( service_type ) )
     {
         printf("\nregular msg\n");
@@ -120,27 +119,18 @@ static void Read_message()
             case 1: ; //new email from a client  
                 //creates a new update
                 updates_sent++;
+                new_update->sequence_num = updates_sent;
                 new_update->type = 1; //new email
                 new_update->mail_id.server = server_index;
                 new_update->mail_id.sequence_num = updates_sent;
                
                 email *test_email = (email*)mess;
                 new_update->email_ = *test_email;
-                //strcpy(*new_update->email_, (email*)mess);
                 
-                printf("\nnew_update->email_.to = %s", new_update->email_.to);
-                printf("\nnew_update->email_.subject = %s", new_update->email_.subject);
-                printf("new_update->email_.message = %s", new_update->email_.message);
-                printf("new_update->email_.sender = %s\n", new_update->email_.sender);
-
                 //write the new email to our log/file for that users email file
-                //char filename[] = "/tmp/ts_";
-                char filename[MAX_USERNAME+11]; //maxusername + 1(serverindex) + 10(emails.txt) = + 11
-                sprintf(filename, &sc);
-                strcat(filename, new_update->email_.to);
-                char endtxt[11];
-                strcpy(endtxt,"emails.txt");
-                if ( (fw = fopen( ( strcat(filename, endtxt) ) , "a") ) == NULL ) { //a appends instead of overwriting the file
+                char filename[MAX_USERNAME+11] = "";
+                get_filename(filename, new_update->email_.to, 0); //0=emails.txt
+                if ( ( fw = fopen(filename, "a") ) == NULL ) {
                     perror("fopen");
                     exit(0);
                 }
@@ -149,8 +139,7 @@ static void Read_message()
                     printf("fprintf error");
                 fclose(fw);
                 
-                //TODO: apply the update
-                //adds new_update to our linked list in updates_window
+                //apply the update: adds new_update to our linked list in updates_window
                 ret = repo_insert(updates_window[server_index-1], new_update);
                 if (ret == -1) //error
                     printf("error");
@@ -165,7 +154,80 @@ static void Read_message()
         
             case 2: ; //received a read request from client
                 printf("\ncase 2: received read request\n");
-                //mess will be a cell!
+                //mess will be a request type 
+                updates_sent++;
+                new_update->sequence_num = updates_sent; //it would be server, seq num
+                new_update->type = 2; //read an email request
+                
+                request *temp_req = (request*)mess;
+                new_update->mail_id = temp_req->mail_id;
+
+                strcpy(new_update->email_.to, temp_req->user);
+                printf("\ncells to = %s",new_update->email_.to);
+                printf("\ncells unique_id = <%d,%d>\n",new_update->mail_id.server,new_update->mail_id.sequence_num);
+                
+                //write to our log
+                
+                char fn[MAX_USERNAME+11] = "";
+                get_filename(fn, new_update->email_.to, 1); //1=reads.txt
+                FILE* fw2;
+                if ( ( fw2 = fopen(fn, "a") ) == NULL ) {
+                    perror("fopen");
+                    exit(0);
+                }
+
+                //write the emails id in here
+                ret = fprintf(fw2, "%d %d\n", new_update->mail_id.server, new_update->mail_id.sequence_num);
+                if ( ret < 0 )
+                    printf("fprintf error");
+                fclose(fw2);
+
+                /*
+                char fn[MAX_USERNAME+11]; //maxusername + 1(serverindex) + 10(emails.txt) = + 11
+                sprintf(fn, &sc);
+                strcat(fn, new_update->email_.to);
+                printf("\n\topening %semails.txt\n", fn);
+                FILE* fwr;
+                if ( (fwr = fopen( ( strcat(fn, endtxt) ) , "r+") ) == NULL ) { //opens to read & write
+                    perror("fopen");
+                    exit(0);
+                }
+                */
+                /* my attempt to change the 'u' to 'r' in a file
+                //get line by line
+                //read the first char of each line (id) 
+                //if the id matches, then this is the line we will edit!
+
+                char buff[256]; //reads everyline into buff 
+                FILE* behind_fr = fopen(fn, "r+"); 
+                behind_fr = fwr; //one line behind
+                while ( fgets(buff, 256, fwr) )
+                {
+                    printf("\n>%s",buff);
+                    printf("\nbuff[0] = %c",buff[0]);
+                    printf("temp_req->mail_id.server = %d", temp_req->mail_id.server);
+                   
+                    if ( atoi(&buff[0]) == temp_req->mail_id.server ) {
+                        char tkn[] = "|"; 
+                        char *extract = strtok(&buff[2], tkn); //buff[2] starts the sequence_num
+                        printf("extract = %s\n",extract);
+                        if(atoi(extract) == temp_req->mail_id.sequence_num) //found the email
+                        {
+                            printf("buff now = %s\n", buff);
+                            //move behind_fr to the last char of that line
+                            char c;
+                            do {
+                                c = (char)fgetc(behind_fr);
+                                printf("%c",c);
+                            } while(c != EOF);
+                       } 
+                    }
+                    behind_fr = fwr;
+                }
+                */
+                //go to the last char and change it to a 'r'
+                //apply the update
+                
                 break;
 
             case 4: ;
@@ -177,8 +239,7 @@ static void Read_message()
             case 5: ;
                 printf("\ncase 5: received an udpate from server on all servers group");
                 //ignore update if it's from ourself
-                //sender[7] is the index ~ #server1#ugrad8
-                //if ( server_index == sender[7] ) break;
+                if ( server_index == sender[7] ) break;
                 
                 //make sure we can print the update here:
 
@@ -246,20 +307,16 @@ static void request_mailbox(char *client)
     int sn = 1; 
     FILE *fr; //pointer to file for reading 
     sc = (server_index + '0'); 
-    
-    //char filename[] = "/tmp/ts_";
-    char file[MAX_USERNAME+11] = ""; // maxusername + 1(serverindex) + 10(emails.txt) = + 11
-    strcat(file, &sc);
-    strcat(file, client);
-    char endtxt[11];
-    strcpy(endtxt,"emails.txt");
+   
+    char filename[MAX_USERNAME+11] = "";
+    get_filename(filename, client, 0); //0 is for emails
+
     //open their emails file 
-    if ( (fr = fopen( ( strcat(file, endtxt) ) , "r") ) == NULL ) {  //done reading emails from file or no emails
+    if ( (fr = fopen(filename , "r") ) == NULL ) {  //done reading emails from file or no emails
         int ret = SP_multicast( Mbox, AGREED_MESS, client, 0, sizeof(window), (char*)&new_window );
         if (ret < 0 ) SP_error( ret );
         return;
     }
-
     cell *new_cell;
        
     /* fills the email & id within this cell */
@@ -268,14 +325,11 @@ static void request_mailbox(char *client)
     {
         new_cell = &new_window.window[sn-1];
         new_cell->sn = sn;
-        new_cell->status = 'u'; //unread
 
         //gets rid of the new line
         buff[strcspn(buff,"\n")] = 0;
-    
         char tkn[] = "|"; 
         char *extract = strtok(buff, tkn);
-
         int round = 0;
         while(extract != NULL)
         {
@@ -285,6 +339,7 @@ static void request_mailbox(char *client)
                     new_cell->mail_id.sequence_num = atoi(&extract[2]);
                     break;
                 case 2: ;
+                    printf("\t extract = %s\n", extract);
                     sprintf(new_cell->mail.subject,extract);
                     break;
                 case 3: ;
@@ -298,14 +353,41 @@ static void request_mailbox(char *client)
             round++;
         }
         sprintf(new_cell->mail.to,client);
+
+        //check the status of the id
         
+        //get_filename(temp_fn, client, 2); //2 is for deletes
+        //^^CAUSING ISSUES I THINK ITS WRITING OVER DATA IN SOME BUFFER...
+
+        char temp_fn[MAX_USERNAME+11] = "";
+        sc = (server_index + '0'); 
+        char temp[] = "deletes.txt";
+        char temp2[] = "reads.txt";
+        strcat(temp_fn, &sc);
+        strcat(temp_fn, client);
+       
+        strcat(temp_fn, temp);
+        printf("\ntemp_fn = %s\n",temp_fn);
+        char stat = 'u';
+        if ( check_status(&new_cell->mail_id, temp_fn) == 1 ) { //email has been deleted
+            stat = 'd';
+        } else { //check if it's read
+            //get_filename(temp_fn, client, 1);//1 is for reads
+            memset(temp_fn, '\0', sizeof(temp_fn));
+            strcat(temp_fn, &sc);
+            strcat(temp_fn, client);
+            strcat(temp_fn, temp2);
+            printf("\ntemp_fn = %s\n",temp_fn);
+            if ( check_status(&new_cell->mail_id, temp_fn) == 1 )
+                stat = 'r';
+        }
+        sprintf(&new_cell->status, &stat);
         sn++;
-    } 
+    }
+    //TODO: WE NEED A CHECK TO LOOK AT THE DELETE & READ FILES AND UPDATE THE CELLS STATUS
     //send the new_window to the client
     print_window(&new_window);
     int ret = SP_multicast(Mbox, AGREED_MESS, client, 0, sizeof(window), (char*)&new_window);
-    printf("sizeof(window) = %ld", sizeof(window));
-    printf("ret = %d", ret);
     if ( ret < 0 ) SP_error( ret ); 
 }
 
@@ -356,8 +438,6 @@ void print_repo(linkedList *l)
 }
 */
 
-//create a func that checks if two points to id are the same
-
 //prints contents of the window
 void print_window(window* w)
 {
@@ -365,13 +445,42 @@ void print_window(window* w)
     printf("\tsn#\t<server,seq_num>\tsubject\tmessage\tfrom\n");
     for ( int i = 0; i < MAX_CELLS; i++ ) {
         cell_ = &w->window[i];
-        if (cell_ == NULL) {
-            printf("\nno cell at window[%d]", i);
-        } else {
-            printf("\n\t%d\t<%d,%d>\t%s\t%s\t%s", cell_->sn, cell_->mail_id.server, cell_->mail_id.sequence_num, cell_->mail.subject, cell_->mail.message, cell_->mail.sender);
-        }
+        printf("\n\t%d\t<%d,%d>\t%s\t%s\t%s\t%c", cell_->sn, cell_->mail_id.server, cell_->mail_id.sequence_num, cell_->mail.subject, cell_->mail.message, cell_->mail.sender, cell_->status);
     }
 
+}
+
+/* Creates the correct filename to open 
+ * fn is a pointer to an empty filename that this func will update */
+static void get_filename(char fn[MAX_USERNAME+11], char *client, int r)
+{
+    memset(fn, '\0', MAX_USERNAME+11);
+    //r = 0 (emails.txt) 1 (reads.txt) 2 (deletes.txt)
+    sc = (server_index + '0'); 
+    char *tmp = (r == 0) ? "emails.txt" : ( (r == 1) ? "reads.txt" : "deletes.txt" );
+    strcat(fn, &sc);
+    strcat(fn, client);
+    strcat(fn, tmp);
+    return;
+}
+
+/* Returns 1 if the id_ exists in the file else 0*/
+static int check_status(id *id_, char *file)
+{
+    FILE *fr2;
+    printf("file opening = %s", file);
+    if ( (fr2 = fopen( file , "r") ) == NULL )
+        return 0; //nothing to open/no emails deleted or read
+    //otherwise iterate through and look for mail_id
+    char buff2[256]; //reads everyline into buff
+    while ( fgets(buff2, 256, fr2) )
+    {
+        if ( atoi(&buff2[0]) == id_->server && atoi(&buff2[2]) == id_->sequence_num ) //same id
+            return 1;
+    }
+    fclose(fr2);
+
+    return 0;
 }
 
 static void Bye()
