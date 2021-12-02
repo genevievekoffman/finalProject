@@ -21,7 +21,8 @@ typedef struct dummy_update {
         //when type = 2 or 3 -> email_.to is the client that made the request! (open their file)  
     //following will !null when type = 2 or 3
     id mail_id; 
-    int sequence_num; //added this to handle sending an update holding read/delete requests (this is the servers seq num)
+    //int sequence_num; //added this to handle sending an update holding read/delete requests (this is the servers seq num)
+    id update_id;
 }update;
 
 //client -> server used for read & delete requests
