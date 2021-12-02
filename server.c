@@ -214,6 +214,9 @@ static void Read_message()
                 if ( ret < 0 )
                     printf("fprintf error");
                 fclose(fw2);
+                
+                //multicast the update to all_servers group
+                ret = SP_multicast(Mbox, AGREED_MESS, "all_servers", 5, sizeof(update), (char*)(new_update));
                 break;
 
             case 3: ; //received a delete request from client
@@ -253,6 +256,8 @@ static void Read_message()
                 if ( ret < 0 )
                     printf("fprintf error");
                 fclose(fw2);
+                //multicast the update to all_servers group
+                ret = SP_multicast(Mbox, AGREED_MESS, "all_servers", 5, sizeof(update), (char*)(new_update));
                 
                 break;
             
@@ -266,14 +271,7 @@ static void Read_message()
                 printf("\ncase 5: received an udpate from server on all servers group");
                 //ignore update if it's from ourself
                 if ( server_index == atoi(&sender[7]) ) break;
-                
-                //make sure we can print the update here:
-
                 update *new_update= (update*)mess;
-                printf("\nupdate type= %d", new_update->type);
-                printf("\nupdates ID = <%d, %d>", new_update->update_id.server, new_update->update_id.sequence_num);
-                printf("\nupdates mail_id = <%d,%d>", new_update->mail_id.server, new_update->mail_id.sequence_num);
-                printf("\nemail: \n\tto: %s \n\tsubject: %s \n\tmessage: %s \n\tfrom: %s", new_update->email_.to, new_update->email_.subject, new_update->email_.message, new_update->email_.sender);
                 
                 //First: save this update to our log file for the server that sent the update
                 memset(log_filename, '\0', 9); 
@@ -318,6 +316,7 @@ static void Read_message()
                         fclose(fw);
                         break;
                     case 2: ; //new read email update -> write the emails id in the recipients read.txt file
+                        printf("\nCASE new read email update\n");
                         memset(recipients_file, '\n', MAX_USERNAME+11);
                         get_filename(recipients_file, new_update->email_.to, 1); //1=reads.txt
                         if ( ( fw = fopen(recipients_file, "a") ) == NULL ) {
@@ -327,8 +326,18 @@ static void Read_message()
                         ret = fprintf(fw, "%d %d\n", new_update->mail_id.server, new_update->mail_id.sequence_num);
                         fclose(fw);
                         break;
-                    case 3: ;
-
+                    case 3: ;//new delete email update -> write the emails id in the recipients delete.txt file
+                        printf("\nCASE new delete email update\n");
+                        memset(recipients_file, '\n', MAX_USERNAME+11);
+                        get_filename(recipients_file, new_update->email_.to, 2); //2=deletes.txt
+                        printf("\n\tISSUE HERE recipients_file = %s\n", recipients_file);
+                        if ( ( fw = fopen(recipients_file, "a") ) == NULL ) {
+                            perror("fopen");
+                            exit(0);
+                        }
+                        ret = fprintf(fw, "%d %d\n", new_update->mail_id.server, new_update->mail_id.sequence_num);
+                        fclose(fw);
+                        break;
                 }
                 //if it's a read or delete -> save the unique id to corelating file
 
