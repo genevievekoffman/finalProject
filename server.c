@@ -1,5 +1,4 @@
 //server program
-
 #include "structs.h"
 #include "sp.h"
 #include <sys/types.h>
@@ -23,8 +22,8 @@ static void Read_message();
 static void Bye();
 static void request_mailbox(char *client);
 static void updates_window_init();
-static int repo_insert(linkedList *l, update* u);
-//void print_repo(linkedList *l);
+static int repo_insert(int i, update* u);
+static void print_repo(int i);
 void print_window(window* w);
 static int check_status(id *id_, char *file);
 static void write_to_log(char *sec_server);
@@ -37,10 +36,10 @@ FILE *fw;
 FILE* fw2;
 static char si;
 
-//an array of pointers to Linked lists
-static linkedList* updates_window[MAX_SERVERS]; 
+static linkedList updates_window[MAX_SERVERS]; 
 static id* status_matrix[MAX_SERVERS][MAX_SERVERS]; //5x5 matrix with pointers to id's
 static char log_filename[9];
+static int state; //0 = normal state 1 = reconciliation state
 
 int main(int argc, char **argv)
 {
@@ -81,7 +80,8 @@ int main(int argc, char **argv)
     if ( ret < 0 ) SP_error( ret );
 
     updates_window_init(); 
-    //print_repo(updates_window[0]);
+    for(int j = 0; j < MAX_SERVERS; j++)
+        print_repo(j);
     
     E_init();
     E_attach_fd( Mbox, READ_FD, Read_message, 0, NULL, HIGH_PRIORITY ); 
@@ -122,9 +122,8 @@ static void Read_message()
                 break;
                 
             case 1: ; //new email from a client  
-                //new update
                 updates_sent++;
-                new_update->type = 1; //new email
+                new_update->type = 1; 
                 //unique update_id
                 new_update->update_id.sequence_num = updates_sent;
                 new_update->update_id.server = server_index;
@@ -135,7 +134,7 @@ static void Read_message()
                 email *new_email = (email*)mess;
                 new_update->email_ = *new_email;
                 
-                //write update to OUR log file ##LOG.txt
+                //write the update to OUR log file ##LOG.txt
                 write_to_log(&si);
 
                 //writes the email in the recipients emails.txt file
@@ -149,11 +148,11 @@ static void Read_message()
                 if ( ret < 0 ) printf("fprintf error");
                 fclose(fw);
                 
-                //apply the update: adds new_update to our linked list in updates_window
-                ret = repo_insert(updates_window[server_index-1], new_update);
+                //apply the update: adds new_update to OUR linked list in updates_window
+                ret = repo_insert(server_index-1, new_update);
                 if (ret == -1) //error
                     printf("error");
-                //print_repo(updates_window[server_index-1]);
+                print_repo(server_index-1);
                 
                 //update our status_matrix to our seq_num,server_index (unique_id)
                 status_matrix[server_index-1][server_index-1] = unique_id;
@@ -164,16 +163,33 @@ static void Read_message()
         
             case 2: ; //received a read request from client
                 //mess will be a request type 
-                updates_sent++;
-                new_update->type = 2; //read an email request
-                new_update->update_id.sequence_num = updates_sent; 
-                new_update->update_id.server = server_index;
-               
-                //ISSUE: when reading a message not on the server we sent it from ... doesnt read the correct ID?!
+                
                 request *temp_req = (request*)mess;
-                printf("\nREAD DEBUG\ntemp_req->mail_id->server = %d, seq= %d\n", temp_req->mail_id.server,temp_req->mail_id.sequence_num); //should be the value we got from client!
-                new_update->mail_id = temp_req->mail_id;
+                memset(new_update, 0, sizeof(update)); //fill it with 0's
+                
+                printf("\nREAD DEBUG");
+                new_update->mail_id.server = temp_req->mail_id.server;
+                printf("\nA) temp_req->mail_id->server = %d, seq= %d\n", temp_req->mail_id.server,temp_req->mail_id.sequence_num); //should be the value we got from client!
+                printf("\nMinor check: new_update->mail_id.server = %d", new_update->mail_id.server); 
+                new_update->mail_id.sequence_num = temp_req->mail_id.sequence_num;
+               
+                //WHEN I CHANGE ONE SERVER, THEY BOTH CHANGE WHYYYYYY
+                
+                
+                printf("\nB) new_update->mail_id.server = %d, new_update->mail_id.seq = %d\nplus: new_update->update_id.server = %d, new_update->update_id.sequence_num = %d", new_update->mail_id.server, new_update->mail_id.sequence_num, new_update->update_id.server, new_update->update_id.sequence_num); //should be the value we got from client!
 
+                updates_sent++;
+                new_update->type = 2; //2 read an email request
+                new_update->update_id.server = server_index;
+                new_update->update_id.sequence_num = updates_sent; 
+                
+                //first two should be accurate, second two should be the new update id
+                printf("\nC) new_update->mail_id.server = %d, new_update->mail_id.sequence_num = %d new_update->update_id.server = %d, new_update->update_id.seqnum = %d, new_update->type = %d\n", temp_req->mail_id.server,temp_req->mail_id.sequence_num, new_update->update_id.server, new_update->update_id.sequence_num, new_update->type); //should be the value we got from client!
+              
+                //below should be 0
+                //printf("\nREAD DEBUG\ntemp_req->mail_id->server = %d, seq= %d\n", temp_req->mail_id.server,temp_req->mail_id.sequence_num); //should be the value we got from client!
+                printf("WRITING1: %d %d\n", new_update->mail_id.server, new_update->mail_id.sequence_num);
+                printf("WRITING2: %d %d\n", new_update->mail_id.server, new_update->mail_id.sequence_num);
                 strcpy(new_update->email_.to, temp_req->user);
                 
                 //write update to OUR log file ##LOG.txt
@@ -186,6 +202,7 @@ static void Read_message()
                     exit(0);
                 }
                 //write the emails id in the recipients read.txt file
+                printf("WRITING3: %d %d\n", new_update->mail_id.server, new_update->mail_id.sequence_num);
                 ret = fprintf(fw2, "%d %d\n", new_update->mail_id.server, new_update->mail_id.sequence_num);
                 if ( ret < 0 )
                     printf("fprintf error");
@@ -256,6 +273,7 @@ static void Read_message()
                         fclose(fw);
                         break;
                     case 2: ; //new read email update -> write the emails id in the recipients read.txt file
+                        printf("\n\tREAD EMAIL UPDATE FROM ANOTHER SERVER");
                         memset(recipients_file, '\n', MAX_USERNAME+11);
                         get_filename(recipients_file, new_update->email_.to, 1); //1=reads.txt
                         if ( ( fw = fopen(recipients_file, "a") ) == NULL ) {
@@ -430,46 +448,38 @@ static void updates_window_init()
     //TODO: create a func to free all sentinel nodes before ending program
     printf("\ninit update_window");
 
-    for (int i = 0; i < MAX_SERVERS; i++) {
-        linkedList *new_list;
-        new_list = malloc(sizeof(linkedList));
-        
-        node *sentinel;
-        sentinel = malloc(sizeof(node));
-        sentinel->update = NULL;
-        sentinel->nxt = NULL;
-        
-        new_list->sentinel = sentinel;
-        updates_window[i] = new_list; 
+    for ( int i = 0; i < MAX_SERVERS; i++ ) {
+        linkedList *curr_list = &updates_window[i];
+        curr_list->sentinel.update = NULL;
+        curr_list->sentinel.nxt = NULL;
     }
 }
 
-//returns -1 if something went wrong while inserting new node/update
-int repo_insert(linkedList *l, update* u)
+//returns -1 if something went wrong while inserting new node/update to front of linked list
+int repo_insert(int index, update* u)
 {
     node *pnode;
     pnode = malloc(sizeof(node));
     if( pnode == NULL ) return -1;
 
     pnode->update = u;
-    pnode->nxt = l->sentinel->nxt;
-    l->sentinel->nxt = pnode;
+    pnode->nxt = updates_window[index].sentinel.nxt;
+    updates_window[index].sentinel.nxt = pnode;
     return 0;
 }
 
-//prints the updates in the linked list
-/*
-void print_repo(linkedList *l)
+//prints the updates in the linked list of updats_window[index]
+static void print_repo(int i)
 {
-    if(l->sentinel->nxt == NULL) return;
-    node *ptemp = l->sentinel;
+    printf("\n\tPRINTING linkedlist[%d]",i);
+    if ( updates_window[i].sentinel.nxt == NULL) return;
+    node *ptemp = &updates_window[i].sentinel;
     do {
         ptemp = ptemp->nxt;
-        printf("\nseq_num=%d, server=%d", ptemp->update->mail_id->sequence_num, ptemp->update->id->server);
+        printf("\n<%d,%d>", ptemp->update->update_id.sequence_num, ptemp->update->update_id.server);
     } while(ptemp->nxt != NULL);
 
 }
-*/
 
 //prints contents of the window
 void print_window(window* w)

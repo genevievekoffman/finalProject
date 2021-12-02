@@ -178,7 +178,7 @@ static void User_command()
            
             request req;
             fill_request(&req,atoi(sn_));
-            
+            printf("\nreq->mail_id.server=%d,req->mail_id.sequence_num=%d", req.mail_id.server, req.mail_id.sequence_num); 
             ret = SP_multicast(Mbox, AGREED_MESS, curr_server, 2, sizeof(request), (char*)(&req));
             if ( ret < 0 ) SP_error( ret );
             
