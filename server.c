@@ -27,6 +27,7 @@ static int repo_insert(linkedList *l, update* u);
 //void print_repo(linkedList *l);
 void print_window(window* w);
 static int check_status(id *id_, char *file);
+static void write_to_log(char *sec_server);
 
 static void get_filename(char *fn, char *client, int r);
 static update *new_update;
@@ -34,11 +35,12 @@ static id *unique_id;
 static int updates_sent; //sequence num
 FILE *fw;
 FILE* fw2;
-static request *temp_req; 
+static char si;
 
 //an array of pointers to Linked lists
 static linkedList* updates_window[MAX_SERVERS]; 
 static id* status_matrix[MAX_SERVERS][MAX_SERVERS]; //5x5 matrix with pointers to id's
+static char log_filename[9];
 
 int main(int argc, char **argv)
 {
@@ -60,7 +62,7 @@ int main(int argc, char **argv)
     sprintf( Spread_name, "10050"); //always connects to my port
     strncat( Server, argv[1], 1 );
     sprintf( Private_group, argv[1] );
-    
+    si = server_index + '0'; 
     /* connect to SPREAD */ 
     int ret;
     ret = SP_connect_timeout( Spread_name, Server, 0, 1, &Mbox, Private_group, test_timeout ); 
@@ -97,14 +99,12 @@ static void Read_message()
     int             endian_mismatch;
     int             num_groups;
     int             ret;
-    char log_filename[9];
     char recipients_file[MAX_USERNAME+11];
 
     sc = (server_index + '0'); 
 
     ret = SP_receive( Mbox, &service_type, sender, 10, &num_groups, target_groups, &mess_type, &endian_mismatch, sizeof(mess), mess);
 
-    
     if ( Is_regular_mess( service_type ) )
     {
         printf("\nregular msg\n");
@@ -112,7 +112,6 @@ static void Read_message()
         switch ( mess_type )
         {
             case 0: ; //client connection request 
-                
                 //joins the group server_client
                 char *msg = (char*)mess;
                 char sc_group[MAX_MESSLEN];
@@ -123,7 +122,6 @@ static void Read_message()
                 break;
                 
             case 1: ; //new email from a client  
-                
                 //new update
                 updates_sent++;
                 new_update->type = 1; //new email
@@ -138,19 +136,7 @@ static void Read_message()
                 new_update->email_ = *new_email;
                 
                 //write update to OUR log file ##LOG.txt
-                memset(log_filename, '\0', 9); //clears it
-                char si = server_index + '0';
-                strncpy(log_filename,&si, 1);
-                strncpy(&log_filename[1], &si, 1);
-                strcat(log_filename, "LOG.txt");
-                //since it's a new email update: add all email info also
-                if ( ( fw = fopen(log_filename, "a") ) == NULL ) {
-                    perror("fopen");
-                    exit(0);
-                }
-                ret = fprintf(fw, "%d %d|%d|%s|%s|%s|%s\n", new_update->update_id.server, new_update->update_id.sequence_num, new_update->type, new_update->email_.to, new_update->email_.subject, new_update->email_.message, new_update->email_.sender); //update_id|type|email contents (since it's a new email, the update_id & mail_id are the same)
-                if ( ret < 0 ) printf("fprintf error");
-                fclose(fw); //push it to the disk
+                write_to_log(&si);
 
                 //writes the email in the recipients emails.txt file
                 char filename[MAX_USERNAME+11] = "";
@@ -182,26 +168,16 @@ static void Read_message()
                 new_update->type = 2; //read an email request
                 new_update->update_id.sequence_num = updates_sent; 
                 new_update->update_id.server = server_index;
-                temp_req = (request*)mess;
+               
+                //ISSUE: when reading a message not on the server we sent it from ... doesnt read the correct ID?!
+                request *temp_req = (request*)mess;
+                printf("\nREAD DEBUG\ntemp_req->mail_id->server = %d, seq= %d\n", temp_req->mail_id.server,temp_req->mail_id.sequence_num); //should be the value we got from client!
                 new_update->mail_id = temp_req->mail_id;
 
                 strcpy(new_update->email_.to, temp_req->user);
-                printf("\ncells to = %s",new_update->email_.to);
-                printf("\ncells unique_id = <%d,%d>\n",new_update->mail_id.server,new_update->mail_id.sequence_num);
                 
                 //write update to OUR log file ##LOG.txt
-                memset(log_filename, '\0', 9); //clears it
-                si = server_index + '0';
-                strncpy(log_filename,&si, 1);
-                strncpy(&log_filename[1], &si, 1);
-                strcat(log_filename, "LOG.txt");
-                //since it's a READ email update: just need the mails id and recipient
-                if ( ( fw = fopen(log_filename, "a") ) == NULL ) {
-                    perror("fopen");
-                    exit(0);
-                }
-                ret = fprintf(fw, "%d %d|%d|%d %d|%s\n",new_update->update_id.server, new_update->update_id.sequence_num, new_update->type, new_update->mail_id.server, new_update->mail_id.sequence_num, new_update->email_.to); //update_id|type|email_id|recipient
-                fclose(fw); //push it to the disk
+                write_to_log(&si);
 
                 char fn[MAX_USERNAME+11] = "";
                 get_filename(fn, new_update->email_.to, 1); //1=reads.txt
@@ -232,19 +208,7 @@ static void Read_message()
                 printf("\ncells unique_id = <%d,%d>\n",new_update->mail_id.server,new_update->mail_id.sequence_num);
                 
                 //write update to OUR log file ##LOG.txt
-                memset(log_filename, '\0', 9); //clears it
-                si = server_index + '0';
-                strncpy(log_filename,&si, 1);
-                strncpy(&log_filename[1], &si, 1);
-                strcat(log_filename, "LOG.txt");
-                //since it's a Delete email update: just need the mails id and recipient
-                if ( ( fw = fopen(log_filename, "a") ) == NULL ) {
-                    perror("fopen");
-                    exit(0);
-                }
-                ret = fprintf(fw, "%d %d|%d|%d %d|%s\n",new_update->update_id.server, new_update->update_id.sequence_num, new_update->type, new_update->mail_id.server, new_update->mail_id.sequence_num, new_update->email_.to); //update_id|type|email_id|recipient
-                fclose(fw); //push it to the disk
-                
+                write_to_log(&si);
                 char fn_[MAX_USERNAME+11] = "";
                 get_filename(fn_, new_update->email_.to, 2); //2=deletes.txt
                 if ( ( fw2 = fopen(fn_, "a") ) == NULL ) {
@@ -271,40 +235,16 @@ static void Read_message()
                 printf("\ncase 5: received an udpate from server on all servers group");
                 //ignore update if it's from ourself
                 if ( server_index == atoi(&sender[7]) ) break;
-                update *new_update= (update*)mess;
+                new_update= (update*)mess;
                 
-                //First: save this update to our log file for the server that sent the update
-                memset(log_filename, '\0', 9); 
-                si = server_index + '0';
-                strncpy(log_filename,&si, 1);
-                strncpy(&log_filename[1], &sender[7], 1);
-                strcat(log_filename, "LOG.txt");
-                //so if it's from server2 and we are server1: save in 12LOG
-                if ( ( fw = fopen(log_filename, "a") ) == NULL ) {
-                    perror("fopen");
-                    exit(0);
-                }
-
-                //if type = 1 (new email) add all email info
-                switch(new_update->type) {
-                    case 1: ; //new email
-                        fprintf(fw, "%d %d|%d|%s|%s|%s|%s\n", new_update->update_id.server, new_update->update_id.sequence_num, new_update->type, new_update->email_.to, new_update->email_.subject, new_update->email_.message, new_update->email_.sender); //update_id|type|email contents (since it's a new email, the update_id & mail_id are the same)
-                        break; 
-                    case 2: ; //reading an email update
-                        fprintf(fw, "%d %d|%d|%d %d|%s\n",new_update->update_id.server, new_update->update_id.sequence_num, new_update->type, new_update->mail_id.server, new_update->mail_id.sequence_num, new_update->email_.to); //update_id|type|email_id|recipient
-                        break; 
-                    case 3: ; //deleting an email update
-                        fprintf(fw, "%d %d|%d|%d %d|%s\n",new_update->update_id.server, new_update->update_id.sequence_num, new_update->type, new_update->mail_id.server, new_update->mail_id.sequence_num, new_update->email_.to); //update_id|type|email_id|recipient
-                        break;
-                }
-                fclose(fw); //push it to the disk
-               
-                //add the update to the linked list in our matrix (at the server who sent it index)
+                //save the update to our log file for the server that sent the update
+                write_to_log(&sender[7]); 
+                
+                //TODO:add the update to the linked list in our matrix (at the server who sent it index)
                 
                 //now apply the update based on type
                 switch(new_update->type) {
                     case 1: ; //new email -> save the emails info to its log file
-                        //open serverindex_recipient_emails.txt
                         memset(recipients_file, '\n', MAX_USERNAME+11); 
                         get_filename(recipients_file, new_update->email_.to, 0); //0=emails.txt
                         if ( ( fw = fopen(recipients_file, "a") ) == NULL ) {
@@ -316,7 +256,6 @@ static void Read_message()
                         fclose(fw);
                         break;
                     case 2: ; //new read email update -> write the emails id in the recipients read.txt file
-                        printf("\nCASE new read email update\n");
                         memset(recipients_file, '\n', MAX_USERNAME+11);
                         get_filename(recipients_file, new_update->email_.to, 1); //1=reads.txt
                         if ( ( fw = fopen(recipients_file, "a") ) == NULL ) {
@@ -327,7 +266,6 @@ static void Read_message()
                         fclose(fw);
                         break;
                     case 3: ;//new delete email update -> write the emails id in the recipients delete.txt file
-                        printf("\nCASE new delete email update\n");
                         memset(recipients_file, '\n', MAX_USERNAME+11);
                         get_filename(recipients_file, new_update->email_.to, 2); //2=deletes.txt
                         printf("\n\tISSUE HERE recipients_file = %s\n", recipients_file);
@@ -339,8 +277,6 @@ static void Read_message()
                         fclose(fw);
                         break;
                 }
-                //if it's a read or delete -> save the unique id to corelating file
-
                 break;
 
             default:
@@ -384,6 +320,30 @@ static void Read_message()
         }else printf("received incorrecty membership message of type 0x%x\n", service_type );
     
     } else printf("received message of unknown message type 0x%x with ret %d\n", service_type, ret);
+
+}
+
+/* writes the contents of new_update to the curr servers log file & saves to disc */
+static void write_to_log(char *sec_server) //for the second # of the filename (in case its not OUR log file :))
+{
+    memset(log_filename, '\0', 9); //clears the contents of logfile 
+    strncpy(log_filename, &si, 1);
+    strncpy(&log_filename[1], sec_server, 1); //&si
+    strcat(log_filename, "LOG.txt");
+    if ( ( fw = fopen(log_filename, "a") ) == NULL ) {
+        perror("fopen");
+        exit(0);
+    }
+    int ret;
+    //check the type of log 
+    if (new_update->type == 1) //new email: add all the email info also
+        ret = fprintf(fw, "%d %d|%d|%s|%s|%s|%s\n", new_update->update_id.server, new_update->update_id.sequence_num, new_update->type, new_update->email_.to, new_update->email_.subject, new_update->email_.message, new_update->email_.sender); //update_id|type|email contents (since it's a new email, the update_id & mail_id are the same)
+    else if (new_update->type == 2 || new_update->type == 3) //read & delete email update: add the mails id and recipient
+        ret = fprintf(fw, "%d %d|%d|%d %d|%s\n",new_update->update_id.server, new_update->update_id.sequence_num, new_update->type, new_update->mail_id.server, new_update->mail_id.sequence_num, new_update->email_.to); //update_id|type|email_id|recipient
+    else 
+        printf("\nwrite to log type ERROR\n");
+    if ( ret < 0 ) printf("fprintf error");
+    fclose(fw); //push it to the disk
 
 }
 
@@ -444,35 +404,20 @@ static void request_mailbox(char *client)
 
         //check the status of the id
         
-        //get_filename(temp_fn, client, 2); //2 is for deletes
-        //^^CAUSING ISSUES I THINK ITS WRITING OVER DATA IN SOME BUFFER...
+        char filenameA[MAX_USERNAME+11] = "";
+        get_filename(filenameA, client, 2); //2 is for deletes
 
-        char temp_fn[MAX_USERNAME+11] = "";
-        sc = (server_index + '0'); 
-        char temp[] = "deletes.txt";
-        char temp2[] = "reads.txt";
-        strcat(temp_fn, &sc);
-        strcat(temp_fn, client);
-       
-        strcat(temp_fn, temp);
-        printf("\ntemp_fn = %s\n",temp_fn);
         char stat = 'u';
-        if ( check_status(&new_cell->mail_id, temp_fn) == 1 ) { //email has been deleted
+        if ( check_status(&new_cell->mail_id, filenameA) == 1 ) { //email has been deleted
             stat = 'd';
         } else { //check if it's read
-            //get_filename(temp_fn, client, 1);//1 is for reads
-            memset(temp_fn, '\0', sizeof(temp_fn));
-            strcat(temp_fn, &sc);
-            strcat(temp_fn, client);
-            strcat(temp_fn, temp2);
-            printf("\ntemp_fn = %s\n",temp_fn);
-            if ( check_status(&new_cell->mail_id, temp_fn) == 1 )
+            get_filename(filenameA, client, 1);//1 is for reads
+            if ( check_status(&new_cell->mail_id,filenameA) == 1 )
                 stat = 'r';
         }
         sprintf(&new_cell->status, &stat);
         sn++;
     }
-    //TODO: WE NEED A CHECK TO LOOK AT THE DELETE & READ FILES AND UPDATE THE CELLS STATUS
     //send the new_window to the client
     print_window(&new_window);
     int ret = SP_multicast(Mbox, AGREED_MESS, client, 0, sizeof(window), (char*)&new_window);
@@ -535,7 +480,6 @@ void print_window(window* w)
         cell_ = &w->window[i];
         printf("\n\t%d\t<%d,%d>\t%s\t%s\t%s\t%c", cell_->sn, cell_->mail_id.server, cell_->mail_id.sequence_num, cell_->mail.subject, cell_->mail.message, cell_->mail.sender, cell_->status);
     }
-
 }
 
 /* Creates the correct filename to open 

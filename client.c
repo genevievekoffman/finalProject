@@ -178,7 +178,7 @@ static void User_command()
            
             request req;
             fill_request(&req,atoi(sn_));
-
+            
             ret = SP_multicast(Mbox, AGREED_MESS, curr_server, 2, sizeof(request), (char*)(&req));
             if ( ret < 0 ) SP_error( ret );
             
