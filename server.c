@@ -1,4 +1,5 @@
 //server program
+//LINKED LIST IS NOT WORKING - SWITCH TO C++ AND USE VECTORS
 #include "structs.h"
 #include "sp.h"
 #include <sys/types.h>
@@ -164,10 +165,17 @@ static void Read_message()
             case 2: ; //received a read request from client
                 //mess will be a request type 
                 
-                request *temp_req = (request*)mess;
-                memset(new_update, 0, sizeof(update)); //fill it with 0's
-                
+                //printing the address of mail_id.server & update_id.server
                 printf("\nREAD DEBUG");
+                printf("\naddress of new_update->mail_id.server = %p", &new_update->mail_id.server);
+                printf("\naddress of new_update->update_id.server = %p", &new_update->update_id.server);
+
+
+                request *temp_req = (request*)mess;
+                printf("\ntest\n");
+                //why does adding memset mess everything up
+                //memset(new_update, 0, sizeof(update)); //fill it with 0's
+                printf("\ntest2\n");
                 new_update->mail_id.server = temp_req->mail_id.server;
                 printf("\nA) temp_req->mail_id->server = %d, seq= %d\n", temp_req->mail_id.server,temp_req->mail_id.sequence_num); //should be the value we got from client!
                 printf("\nMinor check: new_update->mail_id.server = %d", new_update->mail_id.server); 
@@ -175,7 +183,7 @@ static void Read_message()
                
                 //WHEN I CHANGE ONE SERVER, THEY BOTH CHANGE WHYYYYYY
                 
-                
+                //even though it writes correctly to the files, this prints out the wrong mail id sequence num?
                 printf("\nB) new_update->mail_id.server = %d, new_update->mail_id.seq = %d\nplus: new_update->update_id.server = %d, new_update->update_id.sequence_num = %d", new_update->mail_id.server, new_update->mail_id.sequence_num, new_update->update_id.server, new_update->update_id.sequence_num); //should be the value we got from client!
 
                 updates_sent++;
@@ -183,13 +191,9 @@ static void Read_message()
                 new_update->update_id.server = server_index;
                 new_update->update_id.sequence_num = updates_sent; 
                 
-                //first two should be accurate, second two should be the new update id
                 printf("\nC) new_update->mail_id.server = %d, new_update->mail_id.sequence_num = %d new_update->update_id.server = %d, new_update->update_id.seqnum = %d, new_update->type = %d\n", temp_req->mail_id.server,temp_req->mail_id.sequence_num, new_update->update_id.server, new_update->update_id.sequence_num, new_update->type); //should be the value we got from client!
               
-                //below should be 0
-                //printf("\nREAD DEBUG\ntemp_req->mail_id->server = %d, seq= %d\n", temp_req->mail_id.server,temp_req->mail_id.sequence_num); //should be the value we got from client!
-                printf("WRITING1: %d %d\n", new_update->mail_id.server, new_update->mail_id.sequence_num);
-                printf("WRITING2: %d %d\n", new_update->mail_id.server, new_update->mail_id.sequence_num);
+                printf("READ WRITING1: %d %d\n", new_update->mail_id.server, new_update->mail_id.sequence_num);
                 strcpy(new_update->email_.to, temp_req->user);
                 
                 //write update to OUR log file ##LOG.txt
@@ -213,16 +217,18 @@ static void Read_message()
                 break;
 
             case 3: ; //received a delete request from client
+                request *tempreq = (request*)mess;
+                new_update->mail_id.server = tempreq->mail_id.server;
+                new_update->mail_id.sequence_num = tempreq->mail_id.sequence_num;
+
                 updates_sent++;
                 new_update->type = 3; //delete an email request
                 new_update->update_id.server = server_index;
                 new_update->update_id.sequence_num = updates_sent; //it would be server, seq num
-                temp_req = (request*)mess;
-                new_update->mail_id = temp_req->mail_id;
                 
-                strcpy(new_update->email_.to, temp_req->user);
-                printf("\ncells to = %s",new_update->email_.to);
-                printf("\ncells unique_id = <%d,%d>\n",new_update->mail_id.server,new_update->mail_id.sequence_num);
+                printf("DELETE WRITING1: %d %d\n", new_update->mail_id.server, new_update->mail_id.sequence_num);
+
+                strcpy(new_update->email_.to, tempreq->user);
                 
                 //write update to OUR log file ##LOG.txt
                 write_to_log(&si);
