@@ -207,6 +207,8 @@ static void User_command()
 
             break;
 
+        case 'v': ;
+            printf("membership");
         default:
             printf("\nUnknown command\n");
             break;

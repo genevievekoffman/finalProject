@@ -39,6 +39,7 @@ FILE *fw;
 FILE* fw2;
 static char si;
 
+static void print_matrix();
 static linkedList updates_window[MAX_SERVERS]; 
 static int status_matrix[MAX_SERVERS][MAX_SERVERS]; //5x5 matrix with pointers to id's
 static char log_filename[9];
@@ -52,7 +53,13 @@ int main(int argc, char **argv)
 
     updates_sent = 0; 
     new_update = (update*)malloc(sizeof(update));
-
+    //fills with 0's
+    for(int r = 0; r<MAX_SERVERS; r++) {
+        for(int c = 0; c<MAX_SERVERS; c++) {
+            status_matrix[r][c] = 0;
+        }
+    }
+    print_matrix();
     if ( argc != 2 ) {
         printf("Usage: server <1-5>\n");
         exit(0);
@@ -268,7 +275,8 @@ static void Read_message()
                 //our updates_window at index: &sender[7]
                 repo_insert(atoi(&sender[7]) - 1, new_update);
                 status_matrix[server_index-1][atoi(&sender[7]) - 1] = new_update->update_id.sequence_num;
-
+                print_matrix();
+                print_repo(atoi(&sender[7]) - 1);
 
                 //now apply the update based on type
                 switch(new_update->type) {
@@ -508,18 +516,17 @@ int repo_insert(int index, update* u)
 //prints the updates in the linked list of updats_window[index]
 static void print_repo(int i)
 {
-    printf("\n\tPRINTING linkedlist[%d]",i);
+    printf("\nPRINTING linkedlist[%d]",i);
     if ( updates_window[i].sentinel.nxt == NULL) return;
     node *ptemp = &updates_window[i].sentinel;
     do {
         ptemp = ptemp->nxt;
-        printf("\nupdate_id: <%d,%d>", ptemp->update.update_id.sequence_num, ptemp->update.update_id.server);
-        printf(" mail_id: <%d,%d>", ptemp->update.mail_id.sequence_num, ptemp->update.mail_id.server);
+        printf("\nupdate_id: <%d,%d>", ptemp->update.update_id.server, ptemp->update.update_id.sequence_num);
+        printf(" mail_id: <%d,%d>", ptemp->update.mail_id.server, ptemp->update.mail_id.sequence_num);
         printf(", update type: %d", ptemp->update.type);
         /*
         switch(ptemp->update.type) {    
             case 1: //new email
-
         }
         */
     } while(ptemp->nxt != NULL);
@@ -533,6 +540,7 @@ void print_window(window* w)
     printf("\tsn#\t<server,seq_num>\tsubject\tmessage\tfrom\n");
     for ( int i = 0; i < MAX_CELLS; i++ ) {
         cell_ = &w->window[i];
+        if(cell_->sn == 0) return; //no more to print 
         printf("\n\t%d\t<%d,%d>\t%s\t%s\t%s\t%c", cell_->sn, cell_->mail_id.server, cell_->mail_id.sequence_num, cell_->mail.subject, cell_->mail.message, cell_->mail.sender, cell_->status);
     }
 }
@@ -560,6 +568,7 @@ static void apply_update()
     print_repo(server_index-1);
     //updates our status_matrix[our server] = seq num we just sent
     status_matrix[server_index-1][server_index-1] = updates_sent;
+    print_matrix();
 }
 
 /* Returns 1 if the id_ exists in the file else 0*/
@@ -603,6 +612,17 @@ static void dummy_join()
     }
     recon();
 
+}
+
+static void print_matrix()
+{
+    printf("\nstatus matrix:\n");
+    for(int r = 0; r < MAX_SERVERS; r++) {
+        for(int c = 0; c < MAX_SERVERS; c++) {
+            printf(" %d ", status_matrix[r][c]);
+        }
+        printf("\n");
+    }
 }
 
 static void recon()
