@@ -41,7 +41,7 @@ typedef struct dummy_window {
 }window;
 
 typedef struct dummy_node{
-    struct dummy_update *update; 
+    struct dummy_update update; 
     struct dummy_node *nxt; 
 }node;
 

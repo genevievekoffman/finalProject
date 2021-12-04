@@ -125,7 +125,7 @@ static void Read_message()
                 
             case 1: ; //new email from a client  
                 email *new_email = (email*)mess;
-                printf("\nReceived a new email from client\n to: %s|subject: %s|message: %s|from: %s", new_email->to, new_email->subject, new_email->message, new_email->sender); 
+                printf("\nReceived a new email from client\n\tto: %s|subject: %s|message: %s|from: %s", new_email->to, new_email->subject, new_email->message, new_email->sender); 
                 strcpy(new_update->email_.to, new_email->to);
                 strcpy(new_update->email_.subject, new_email->subject);
                 strcpy(new_update->email_.message, new_email->message);
@@ -256,7 +256,7 @@ static void Read_message()
                 break;
 
             case 5: ;
-                printf("\ncase 5: received an udpate from server on all servers group");
+                printf("\nReceived an update from a server on all_servers group");
                 //ignore update if it's from ourself
                 if ( server_index == atoi(&sender[7]) ) break;
                 new_update= (update*)mess;
@@ -265,7 +265,11 @@ static void Read_message()
                 write_to_log(&sender[7]); 
                 
                 //TODO:add the update to the linked list in our matrix (at the server who sent it index)
-                
+                //our updates_window at index: &sender[7]
+                repo_insert(atoi(&sender[7]) - 1, new_update);
+                status_matrix[server_index-1][atoi(&sender[7]) - 1] = new_update->update_id.sequence_num;
+
+
                 //now apply the update based on type
                 switch(new_update->type) {
                     case 1: ; //new email -> save the emails info to its log file
@@ -326,6 +330,7 @@ static void Read_message()
             for( int i = 0; i < num_groups; i++ )
                 printf("\t%s\n", &target_groups[i][0] );
             printf("grp id is %d %d %d\n",memb_info.gid.id[0], memb_info.gid.id[1], memb_info.gid.id[2] ); 
+            //TODO: differnence between a client joining and a server joining!
 
             //membership changed
             if ( Is_caused_join_mess( service_type ) ){
@@ -466,7 +471,7 @@ static void updates_window_init()
 
     for ( int i = 0; i < MAX_SERVERS; i++ ) {
         linkedList *curr_list = &updates_window[i];
-        curr_list->sentinel.update = NULL;
+        memset(&curr_list->sentinel.update, '\0', sizeof(update));
         curr_list->sentinel.nxt = NULL;
     }
 }
@@ -474,11 +479,27 @@ static void updates_window_init()
 //returns -1 if something went wrong while inserting new node/update to front of linked list
 int repo_insert(int index, update* u)
 {
+    printf("\nrepo_insert\n");
+    printf("\nupdate's type = %d\n", u->type);
+    switch(u->type) {
+        case 1: //new email
+            printf("\nthis it the update we are inserting: type=%d|update_id: <%d,%d>|mail_id: <%d,%d>|email: to=%s| subject=%s| message=%s| from=%s\n", u->type,u->update_id.server,u->update_id.sequence_num,u->mail_id.server, u->mail_id.sequence_num,u->email_.to, u->email_.subject, u->email_.message,u->email_.sender);
+    }
+    
     node *pnode;
     pnode = malloc(sizeof(node));
     if( pnode == NULL ) return -1;
 
-    pnode->update = u;
+    //fill the update
+    pnode->update.type = u->type;
+    pnode->update.update_id.server = u->update_id.server;
+    pnode->update.update_id.sequence_num = u->update_id.sequence_num;
+    pnode->update.mail_id.server = u->mail_id.server;
+    pnode->update.mail_id.sequence_num = u->mail_id.sequence_num;
+    
+    //if type = 1, add the email_ contents
+    //pnode.update.email_.
+    
     pnode->nxt = updates_window[index].sentinel.nxt;
     updates_window[index].sentinel.nxt = pnode;
     return 0;
@@ -492,7 +513,15 @@ static void print_repo(int i)
     node *ptemp = &updates_window[i].sentinel;
     do {
         ptemp = ptemp->nxt;
-        printf("\n<%d,%d>", ptemp->update->update_id.sequence_num, ptemp->update->update_id.server);
+        printf("\nupdate_id: <%d,%d>", ptemp->update.update_id.sequence_num, ptemp->update.update_id.server);
+        printf(" mail_id: <%d,%d>", ptemp->update.mail_id.sequence_num, ptemp->update.mail_id.server);
+        printf(", update type: %d", ptemp->update.type);
+        /*
+        switch(ptemp->update.type) {    
+            case 1: //new email
+
+        }
+        */
     } while(ptemp->nxt != NULL);
 
 }

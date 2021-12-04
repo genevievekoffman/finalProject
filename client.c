@@ -118,7 +118,7 @@ static void User_command()
                 break;
             }
 
-            printf("curr_client = %s", curr_client);
+            //printf("curr_client = %s", curr_client);
             email *new_msg;
             new_msg = (email*) malloc(sizeof(email));
             //get the recipient/to, subject, & msg
@@ -196,7 +196,7 @@ static void User_command()
                 printf("\n\terror: either not logged in or no connection with server\n");
                 break;
             }
-            printf("curr_client = %s", curr_client);
+            //printf("curr_client = %s", curr_client);
             fflush(0);
             ret = SP_multicast( Mbox, AGREED_MESS, curr_server, 4, sizeof(curr_client), curr_client);
 
