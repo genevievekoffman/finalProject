@@ -133,7 +133,7 @@ static void User_command()
             fgets(new_msg->message,MAX_MESSLEN,stdin);
             new_msg->message[strcspn(new_msg->message,"\n")] = 0;
             sprintf(new_msg->sender, curr_client);
-            printf("\nnew_msg->sender = %s", new_msg->sender);
+            //printf("\nnew_msg->sender = %s", new_msg->sender);
             
             //sends new email to connected server
             ret = SP_multicast(Mbox, AGREED_MESS, curr_server, 1, sizeof(email), (char*)(new_msg));
@@ -176,6 +176,11 @@ static void User_command()
                 break;
             }
            
+            //prints the contents of that message
+            cell *req_cell;
+            req_cell = &client_window->window[atoi(sn_)-1];
+            printf("\n\tmessage: %s\n", req_cell->mail.message); 
+
             request req;
             fill_request(&req,atoi(sn_));
             printf("\nreq->mail_id.server=%d,req->mail_id.sequence_num=%d", req.mail_id.server, req.mail_id.sequence_num); 
@@ -224,7 +229,6 @@ static void Read_message()
 
     if ( Is_regular_mess( service_type ) )
     {
-        printf("\nregular msg\n");
         mess[ret] = 0;
         switch ( mess_type )
         {

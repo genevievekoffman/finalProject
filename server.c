@@ -28,17 +28,19 @@ static void print_repo(int i);
 void print_window(window* w);
 static int check_status(id *id_, char *file);
 static void write_to_log(char *sec_server);
-
+static void apply_update();
+static void dummy_join();
+static void dummy_leave();
+static void recon();
 static void get_filename(char *fn, char *client, int r);
 static update *new_update;
-static id *unique_id;
 static int updates_sent; //sequence num
 FILE *fw;
 FILE* fw2;
 static char si;
 
 static linkedList updates_window[MAX_SERVERS]; 
-static id* status_matrix[MAX_SERVERS][MAX_SERVERS]; //5x5 matrix with pointers to id's
+static int status_matrix[MAX_SERVERS][MAX_SERVERS]; //5x5 matrix with pointers to id's
 static char log_filename[9];
 static int state; //0 = normal state 1 = reconciliation state
 
@@ -49,8 +51,7 @@ int main(int argc, char **argv)
     test_timeout.usec = 0;
 
     updates_sent = 0; 
-    new_update = malloc(sizeof(update));
-    unique_id = malloc(sizeof(id));
+    new_update = (update*)malloc(sizeof(update));
 
     if ( argc != 2 ) {
         printf("Usage: server <1-5>\n");
@@ -123,41 +124,39 @@ static void Read_message()
                 break;
                 
             case 1: ; //new email from a client  
+                email *new_email = (email*)mess;
+                printf("\nReceived a new email from client\n to: %s|subject: %s|message: %s|from: %s", new_email->to, new_email->subject, new_email->message, new_email->sender); 
+                strcpy(new_update->email_.to, new_email->to);
+                strcpy(new_update->email_.subject, new_email->subject);
+                strcpy(new_update->email_.message, new_email->message);
+                strcpy(new_update->email_.sender, new_email->sender);
+                printf("\nafter strcpy udpate fields\n to: %s|subject: %s|message: %s|from: %s", new_update->email_.to, new_update->email_.subject, new_update->email_.message, new_update->email_.sender); 
+
                 updates_sent++;
-                new_update->type = 1; 
-                //unique update_id
-                new_update->update_id.sequence_num = updates_sent;
-                new_update->update_id.server = server_index;
-                //unique mail_id
                 new_update->mail_id.server = server_index;
                 new_update->mail_id.sequence_num = updates_sent;
-               
-                email *new_email = (email*)mess;
-                new_update->email_ = *new_email;
-                
+                new_update->update_id.sequence_num = updates_sent;
+                new_update->update_id.server = server_index;
+                new_update->type = 1; 
+                printf("\nafter setting udpate fields\n to: %s|subject: %s|message: %s|from: %s", new_update->email_.to, new_update->email_.subject, new_update->email_.message, new_update->email_.sender); 
+                printf("\nafter setting udpate fields\n to: %s|subject: %s|message: %s|from: %s", new_email->to, new_email->subject, new_email->message, new_email->sender); 
                 //write the update to OUR log file ##LOG.txt
                 write_to_log(&si);
-
                 //writes the email in the recipients emails.txt file
                 char filename[MAX_USERNAME+11] = "";
+                printf("\nbefore getfilename(): new_update->email_.to = %s", new_update->email_.to);
                 get_filename(filename, new_update->email_.to, 0); //0=emails.txt
                 if ( ( fw = fopen(filename, "a") ) == NULL ) {
                     perror("fopen");
                     exit(0);
                 }
+                printf("\nNEW EMAIL RECEIVED\nWRITING TO FILE:%s\n\t %d %d|%s|%s|%s|%s\n", filename, new_update->mail_id.server, new_update->mail_id.sequence_num, new_update->email_.to, new_update->email_.subject, new_update->email_.message, new_update->email_.sender); //server seq_num|to|subject|msg|sender
                 ret = fprintf(fw, "%d %d|%s|%s|%s|%s\n", new_update->mail_id.server, new_update->mail_id.sequence_num, new_update->email_.to, new_update->email_.subject, new_update->email_.message, new_update->email_.sender); //server seq_num|to|subject|msg|sender
                 if ( ret < 0 ) printf("fprintf error");
                 fclose(fw);
                 
-                //apply the update: adds new_update to OUR linked list in updates_window
-                ret = repo_insert(server_index-1, new_update);
-                if (ret == -1) //error
-                    printf("error");
-                print_repo(server_index-1);
-                
-                //update our status_matrix to our seq_num,server_index (unique_id)
-                status_matrix[server_index-1][server_index-1] = unique_id;
-                
+                //apply the update
+                apply_update();
                 //multicast the update to all_servers group
                 ret = SP_multicast(Mbox, AGREED_MESS, "all_servers", 5, sizeof(update), (char*)(new_update));
                 break;
@@ -212,6 +211,8 @@ static void Read_message()
                     printf("fprintf error");
                 fclose(fw2);
                 
+                apply_update();
+                
                 //multicast the update to all_servers group
                 ret = SP_multicast(Mbox, AGREED_MESS, "all_servers", 5, sizeof(update), (char*)(new_update));
                 break;
@@ -225,15 +226,13 @@ static void Read_message()
                 new_update->type = 3; //delete an email request
                 new_update->update_id.server = server_index;
                 new_update->update_id.sequence_num = updates_sent; //it would be server, seq num
-                
-                printf("DELETE WRITING1: %d %d\n", new_update->mail_id.server, new_update->mail_id.sequence_num);
-
+                //printf("DELETE WRITING1: %d %d\n", new_update->mail_id.server, new_update->mail_id.sequence_num);
                 strcpy(new_update->email_.to, tempreq->user);
                 
                 //write update to OUR log file ##LOG.txt
                 write_to_log(&si);
                 char fn_[MAX_USERNAME+11] = "";
-                get_filename(fn_, new_update->email_.to, 2); //2=deletes.txt
+                get_filename(fn_, new_update->email_.to, 2); //2 = deletes.txt
                 if ( ( fw2 = fopen(fn_, "a") ) == NULL ) {
                     perror("fopen");
                     exit(0);
@@ -243,9 +242,11 @@ static void Read_message()
                 if ( ret < 0 )
                     printf("fprintf error");
                 fclose(fw2);
+                
+                apply_update(); 
+
                 //multicast the update to all_servers group
                 ret = SP_multicast(Mbox, AGREED_MESS, "all_servers", 5, sizeof(update), (char*)(new_update));
-                
                 break;
             
             case 4: ;
@@ -322,23 +323,32 @@ static void Read_message()
         {
             printf("Received REGULAR membership for group %s with %d members, where I am member %d:\n",
                 sender, num_groups, mess_type );
-            for( int i=0; i < num_groups; i++ )
+            for( int i = 0; i < num_groups; i++ )
                 printf("\t%s\n", &target_groups[i][0] );
             printf("grp id is %d %d %d\n",memb_info.gid.id[0], memb_info.gid.id[1], memb_info.gid.id[2] ); 
 
+            //membership changed
             if ( Is_caused_join_mess( service_type ) ){
                 printf("Due to the JOIN of %s\n", memb_info.changed_member );
+                dummy_join();
+                //a server can join if they were previously crashed
+                //reconciliation might need to happen
             } else if( Is_caused_leave_mess( service_type ) ){
-                //go into state transfer & above
                 printf("Due to the LEAVE of %s\n", memb_info.changed_member );
+                dummy_leave();
             } else if( Is_caused_disconnect_mess( service_type ) ){
                 printf("Due to the DISCONNECT of %s\n", memb_info.changed_member );
+                //server went down/disconnected within a group
+                dummy_leave();
             } else if( Is_caused_network_mess( service_type ) )
             {
+                printf("Due to network mess\n");
+                dummy_join();    
             }
         
-        }else if (Is_transition_mess(   service_type ) ) {
+        } else if (Is_transition_mess(   service_type ) ) {
             printf("received TRANSITIONAL membership for group %s\n", sender );
+            dummy_leave();
         }else if( Is_caused_leave_mess( service_type ) ){
             printf("received membership message that left group %s\n", sender );
         }else printf("received incorrecty membership message of type 0x%x\n", service_type );
@@ -512,6 +522,17 @@ static void get_filename(char fn[MAX_USERNAME+11], char *client, int r)
     return;
 }
 
+/* adds the update to our linked list & updates our status_matrix */
+static void apply_update()
+{
+    //adds new_update to OUR linked list in updates_window
+    if ( repo_insert(server_index-1, new_update) == -1)
+        printf("error");
+    print_repo(server_index-1);
+    //updates our status_matrix[our server] = seq num we just sent
+    status_matrix[server_index-1][server_index-1] = updates_sent;
+}
+
 /* Returns 1 if the id_ exists in the file else 0*/
 static int check_status(id *id_, char *file)
 {
@@ -531,11 +552,40 @@ static int check_status(id *id_, char *file)
     return 0;
 }
 
+static void dummy_leave()
+{
+    printf("\ndummy_leave()\n");
+    if (state == 1) { //recon state
+        printf("\nNeed to restart reconciliation");
+        recon(); 
+    } else printf("...nothing needs to happen");
+} 
+
+static void dummy_join() 
+{
+    printf("\ndummy_join()");
+    //check state 
+    if (state == 0) //normal   
+    {
+        printf("\tswitching to reconciliation state\n");
+        state = 1;
+    } else { //already in recon state
+        printf("We are in reconciliation state: \n\tNeed to restart reconciliation");
+    }
+    recon();
+
+}
+
+static void recon()
+{
+    printf("\nreconciliation()");
+    state = 0; //switch back to regular state
+}
+
 static void Bye()
 {
     To_exit = 1;
     free(new_update);
-    free(unique_id);
     printf("\nBye.\n");
     //E_detach_fd( Mbox, READ_FD ); 
     SP_disconnect( Mbox );
