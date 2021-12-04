@@ -69,15 +69,13 @@ static void User_command()
 
             //TODO: add further check on if user is already logged in
             sprintf(curr_client, username);
-            printf("cc: %s", curr_client);
+            //printf("cc: %s", curr_client);
             //creates its own group username
             ret = SP_join(Mbox, curr_client);
             if ( ret < 0 ) SP_error( ret );
             logged_in = 1;
-            //TODO: must request the data from server to fill data structure
             
-            //printf("\nusername = %s", username);
-            printf("\ncurr_client = %s", curr_client);
+            //printf("\ncurr_client = %s", curr_client);
             fflush(0);
             break;
 
@@ -290,7 +288,7 @@ static void print_emails()
             return;
         } else {
             //TODO: ONLY NEED TO PRINT THE SENDER & SUBJECT
-            printf("\n\t%d\t<%d,%d>\t%s\t%s\t%s\n\t%c\n", cell_->sn, cell_->mail_id.server, cell_->mail_id.sequence_num, cell_->mail.subject, cell_->mail.message, cell_->mail.sender, cell_->status);
+            printf("\n\t%d\t<%d,%d>\t%s\t%s\t%s\t%c\n", cell_->sn, cell_->mail_id.server, cell_->mail_id.sequence_num, cell_->mail.subject, cell_->mail.message, cell_->mail.sender, cell_->status);
         }
     }
 

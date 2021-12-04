@@ -11,6 +11,10 @@
 #define MAX_VSSETS 10 //?what is this for
 #define MAX_LEN 256 //max line in file
 
+static void print_email(email *m);
+static void print_update(update *u);
+static void print_id(id *id_);
+
 static int server_index; //unique server index
 static char Private_group[MAX_GROUP_NAME];
 static char Server[80];
@@ -53,13 +57,14 @@ int main(int argc, char **argv)
 
     updates_sent = 0; 
     new_update = (update*)malloc(sizeof(update));
+
     //fills with 0's
     for(int r = 0; r<MAX_SERVERS; r++) {
         for(int c = 0; c<MAX_SERVERS; c++) {
             status_matrix[r][c] = 0;
         }
     }
-    print_matrix();
+    //print_matrix();
     if ( argc != 2 ) {
         printf("Usage: server <1-5>\n");
         exit(0);
@@ -89,8 +94,7 @@ int main(int argc, char **argv)
     if ( ret < 0 ) SP_error( ret );
 
     updates_window_init(); 
-    for(int j = 0; j < MAX_SERVERS; j++)
-        print_repo(j);
+    //for(int j = 0; j < MAX_SERVERS; j++) print_repo(j);
     
     E_init();
     E_attach_fd( Mbox, READ_FD, Read_message, 0, NULL, HIGH_PRIORITY ); 
@@ -132,21 +136,26 @@ static void Read_message()
                 
             case 1: ; //new email from a client  
                 email *new_email = (email*)mess;
-                printf("\nReceived a new email from client\n\tto: %s|subject: %s|message: %s|from: %s", new_email->to, new_email->subject, new_email->message, new_email->sender); 
+
+                printf("\nReceived a new email from client\n\t");
+                print_email(new_email);
+
                 strcpy(new_update->email_.to, new_email->to);
                 strcpy(new_update->email_.subject, new_email->subject);
                 strcpy(new_update->email_.message, new_email->message);
                 strcpy(new_update->email_.sender, new_email->sender);
-                printf("\nafter strcpy udpate fields\n to: %s|subject: %s|message: %s|from: %s", new_update->email_.to, new_update->email_.subject, new_update->email_.message, new_update->email_.sender); 
-
+                printf("\nafter strcpy udpate fields, email:\n\t"); 
+                print_email(&new_update->email_);
                 updates_sent++;
                 new_update->mail_id.server = server_index;
                 new_update->mail_id.sequence_num = updates_sent;
                 new_update->update_id.sequence_num = updates_sent;
                 new_update->update_id.server = server_index;
                 new_update->type = 1; 
-                printf("\nafter setting udpate fields\n to: %s|subject: %s|message: %s|from: %s", new_update->email_.to, new_update->email_.subject, new_update->email_.message, new_update->email_.sender); 
-                printf("\nafter setting udpate fields\n to: %s|subject: %s|message: %s|from: %s", new_email->to, new_email->subject, new_email->message, new_email->sender); 
+                printf("\nafter setting udpate fields, new_email:\n\t"); 
+                print_email(new_email);
+                printf("\nafter setting udpate fields, new_update->email:\n\t"); 
+                print_email(&new_update->email_);
                 //write the update to OUR log file ##LOG.txt
                 write_to_log(&si);
                 //writes the email in the recipients emails.txt file
@@ -157,7 +166,8 @@ static void Read_message()
                     perror("fopen");
                     exit(0);
                 }
-                printf("\nNEW EMAIL RECEIVED\nWRITING TO FILE:%s\n\t %d %d|%s|%s|%s|%s\n", filename, new_update->mail_id.server, new_update->mail_id.sequence_num, new_update->email_.to, new_update->email_.subject, new_update->email_.message, new_update->email_.sender); //server seq_num|to|subject|msg|sender
+                printf("\nWriting new email to FILE:%s\n\t %d %d\n\t", filename, new_update->mail_id.server, new_update->mail_id.sequence_num); 
+                print_email(&new_update->email_);
                 ret = fprintf(fw, "%d %d|%s|%s|%s|%s\n", new_update->mail_id.server, new_update->mail_id.sequence_num, new_update->email_.to, new_update->email_.subject, new_update->email_.message, new_update->email_.sender); //server seq_num|to|subject|msg|sender
                 if ( ret < 0 ) printf("fprintf error");
                 fclose(fw);
@@ -169,28 +179,29 @@ static void Read_message()
                 break;
         
             case 2: ; //received a read request from client
-                //mess will be a request type 
-                
-                //printing the address of mail_id.server & update_id.server
                 printf("\nREAD DEBUG");
-                printf("\naddress of new_update->mail_id.server = %p", &new_update->mail_id.server);
-                printf("\naddress of new_update->update_id.server = %p", &new_update->update_id.server);
-
 
                 request *temp_req = (request*)mess;
-                printf("\ntest\n");
                 //why does adding memset mess everything up
                 //memset(new_update, 0, sizeof(update)); //fill it with 0's
-                printf("\ntest2\n");
                 new_update->mail_id.server = temp_req->mail_id.server;
-                printf("\nA) temp_req->mail_id->server = %d, seq= %d\n", temp_req->mail_id.server,temp_req->mail_id.sequence_num); //should be the value we got from client!
+                printf("\nA) mail_id:");
+                print_id(&temp_req->mail_id);
+                
+                printf("\nMinor check) new_update->mail_id:");
+                print_id(&new_update->mail_id);
+                
                 printf("\nMinor check: new_update->mail_id.server = %d", new_update->mail_id.server); 
                 new_update->mail_id.sequence_num = temp_req->mail_id.sequence_num;
                
                 //WHEN I CHANGE ONE SERVER, THEY BOTH CHANGE WHYYYYYY
                 
                 //even though it writes correctly to the files, this prints out the wrong mail id sequence num?
-                printf("\nB) new_update->mail_id.server = %d, new_update->mail_id.seq = %d\nplus: new_update->update_id.server = %d, new_update->update_id.sequence_num = %d", new_update->mail_id.server, new_update->mail_id.sequence_num, new_update->update_id.server, new_update->update_id.sequence_num); //should be the value we got from client!
+
+                printf("\nC) new_update->mail_id:");
+                print_id(&new_update->mail_id);
+                printf("\nD) new_update->update_id:");
+                print_id(&new_update->update_id);
 
                 updates_sent++;
                 new_update->type = 2; //2 read an email request
@@ -212,7 +223,8 @@ static void Read_message()
                     exit(0);
                 }
                 //write the emails id in the recipients read.txt file
-                printf("WRITING3: %d %d\n", new_update->mail_id.server, new_update->mail_id.sequence_num);
+                printf("WRITING3:"); 
+                print_id(&new_update->mail_id);
                 ret = fprintf(fw2, "%d %d\n", new_update->mail_id.server, new_update->mail_id.sequence_num);
                 if ( ret < 0 )
                     printf("fprintf error");
@@ -271,8 +283,7 @@ static void Read_message()
                 //save the update to our log file for the server that sent the update
                 write_to_log(&sender[7]); 
                 
-                //TODO:add the update to the linked list in our matrix (at the server who sent it index)
-                //our updates_window at index: &sender[7]
+                //add update to the linked list in our matrix (at the server who sent it index)
                 repo_insert(atoi(&sender[7]) - 1, new_update);
                 status_matrix[server_index-1][atoi(&sender[7]) - 1] = new_update->update_id.sequence_num;
                 print_matrix();
@@ -305,7 +316,7 @@ static void Read_message()
                     case 3: ;//new delete email update -> write the emails id in the recipients delete.txt file
                         memset(recipients_file, '\n', MAX_USERNAME+11);
                         get_filename(recipients_file, new_update->email_.to, 2); //2=deletes.txt
-                        printf("\n\tISSUE HERE recipients_file = %s\n", recipients_file);
+                        printf("\n\trecipients_file = %s\n", recipients_file);
                         if ( ( fw = fopen(recipients_file, "a") ) == NULL ) {
                             perror("fopen");
                             exit(0);
@@ -391,7 +402,6 @@ static void write_to_log(char *sec_server) //for the second # of the filename (i
         printf("\nwrite to log type ERROR\n");
     if ( ret < 0 ) printf("fprintf error");
     fclose(fw); //push it to the disk
-
 }
 
 /* creates a new window filled with cells and sends it to the client */
@@ -488,11 +498,7 @@ static void updates_window_init()
 int repo_insert(int index, update* u)
 {
     printf("\nrepo_insert\n");
-    printf("\nupdate's type = %d\n", u->type);
-    switch(u->type) {
-        case 1: //new email
-            printf("\nthis it the update we are inserting: type=%d|update_id: <%d,%d>|mail_id: <%d,%d>|email: to=%s| subject=%s| message=%s| from=%s\n", u->type,u->update_id.server,u->update_id.sequence_num,u->mail_id.server, u->mail_id.sequence_num,u->email_.to, u->email_.subject, u->email_.message,u->email_.sender);
-    }
+    print_update(u);
     
     node *pnode;
     pnode = malloc(sizeof(node));
@@ -612,6 +618,34 @@ static void dummy_join()
     }
     recon();
 
+}
+
+/* prints contents of email m*/
+static void print_email(email *m)
+{
+    printf("to: <%s>|subject: <%s>|message: <%s>|sender: <%s>", m->to, m->subject, m->message, m->sender );
+}
+
+/* prints the id in form: <server, sequence_num> */
+static void print_id(id *id_)
+{
+    printf("<%d,%d>", id_->server, id_->sequence_num); 
+}
+
+/* prints contents of update */
+static void print_update(update *u)
+{
+    printf("type:%d", u->type);
+    printf("|update_id: ");
+    print_id(&u->update_id);
+    printf("|mail_id: ");
+    print_id(&u->mail_id);
+    if ( u->type == 1 ) { //new email
+       printf("|email contents: ");
+       print_email(&u->email_);
+    } else { //2 or 3 (read or delete)
+        printf("|recipient: %s", u->email_.to);
+    }
 }
 
 static void print_matrix()
