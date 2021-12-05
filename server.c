@@ -33,8 +33,8 @@ void print_window(window* w);
 static int check_status(id *id_, char *file);
 static void write_to_log(char *sec_server);
 static void apply_update();
-static void dummy_join();
-static void dummy_leave();
+static void dummy_join(membership_info *mem_info);
+static void dummy_leave(membership_info *mem_info);
 static void recon();
 static void get_filename(char *fn, char *client, int r);
 static update *new_update;
@@ -42,7 +42,7 @@ static int updates_sent; //sequence num
 FILE *fw;
 FILE* fw2;
 static char si;
-
+int recon_num; //unique reconciation num
 static void print_matrix();
 static linkedList updates_window[MAX_SERVERS]; 
 static int status_matrix[MAX_SERVERS][MAX_SERVERS]; //5x5 matrix with pointers to id's
@@ -335,6 +335,7 @@ static void Read_message()
     } else if (Is_membership_mess( service_type ) )
     {
         printf("\nmembership msg\n");
+        int trigger = 0; //0 is server, 1 is client
         ret = SP_get_memb_info( mess, service_type, &memb_info );
         if (ret < 0)
         {
@@ -346,33 +347,49 @@ static void Read_message()
         {
             printf("Received REGULAR membership for group %s with %d members, where I am member %d:\n",
                 sender, num_groups, mess_type );
+            
+            if ( atoi(&sender[0]) == server_index ) //server_client group -> this is a Client trigger change (no recon ever needed) 
+                trigger = 1; 
             for( int i = 0; i < num_groups; i++ )
                 printf("\t%s\n", &target_groups[i][0] );
-            printf("grp id is %d %d %d\n",memb_info.gid.id[0], memb_info.gid.id[1], memb_info.gid.id[2] ); 
-            //TODO: differnence between a client joining and a server joining!
-
+            printf("grp id is %d %d %d\n",memb_info.gid.id[0], memb_info.gid.id[1], memb_info.gid.id[2] );  //last int seems to be a unique 'round' for every membership change in a group
+    
             //membership changed
             if ( Is_caused_join_mess( service_type ) ){
                 printf("Due to the JOIN of %s\n", memb_info.changed_member );
-                dummy_join();
-                //a server can join if they were previously crashed
-                //reconciliation might need to happen
+                if (trigger == 1) { //client caused this -> recon is not possible
+                    printf("\nclient membership trigger");
+                } else {
+                    printf("\nserver membership trigger");
+                    if ( atoi(&memb_info.changed_member[7]) == server_index ) { //me
+                        printf("\nIm the new member\n");
+                        if (num_groups > 1) //joining into a group that could have already been transfering data 
+                            dummy_join(&memb_info);
+                    } else {
+                        dummy_join(&memb_info);
+                        //a server can join if they were previously crashed
+                        //reconciliation might need to happen
+                    }
+                }
+
+                //changed_member has the name of the new/leaving member (if its join,leave or disconnect) -> if it's a NETWORK membership -> changed_memb is blank & multiple vs_sets has all the 'subsets of daemons coming otgether into the new membership"
             } else if( Is_caused_leave_mess( service_type ) ){
                 printf("Due to the LEAVE of %s\n", memb_info.changed_member );
-                dummy_leave();
+                dummy_leave(&memb_info);
             } else if( Is_caused_disconnect_mess( service_type ) ){
                 printf("Due to the DISCONNECT of %s\n", memb_info.changed_member );
+                //if a client disconected, we can ignore it
                 //server went down/disconnected within a group
-                dummy_leave();
+                dummy_leave(&memb_info);
             } else if( Is_caused_network_mess( service_type ) )
             {
                 printf("Due to network mess\n");
-                dummy_join();    
+                dummy_join(&memb_info);    
             }
         
         } else if (Is_transition_mess(   service_type ) ) {
             printf("received TRANSITIONAL membership for group %s\n", sender );
-            dummy_leave();
+            dummy_leave(&memb_info);
         }else if( Is_caused_leave_mess( service_type ) ){
             printf("received membership message that left group %s\n", sender );
         }else printf("received incorrecty membership message of type 0x%x\n", service_type );
@@ -485,7 +502,7 @@ static void request_mailbox(char *client)
 static void updates_window_init()
 {
     //TODO: create a func to free all sentinel nodes before ending program
-    printf("\ninit update_window");
+    //printf("\ninit update_window");
 
     for ( int i = 0; i < MAX_SERVERS; i++ ) {
         linkedList *curr_list = &updates_window[i];
@@ -596,26 +613,29 @@ static int check_status(id *id_, char *file)
     return 0;
 }
 
-static void dummy_leave()
+static void dummy_leave(membership_info *mem_info)
 {
     printf("\ndummy_leave()\n");
     if (state == 1) { //recon state
         printf("\nNeed to restart reconciliation");
+        recon_num = mem_info->gid.id[2];
         recon(); 
     } else printf("...nothing needs to happen");
+    fflush(0);
 } 
 
-static void dummy_join() 
+static void dummy_join(membership_info *mem_info)
 {
-    printf("\ndummy_join()");
+    printf("\ndummy_join()\n");
     //check state 
     if (state == 0) //normal   
     {
         printf("\tswitching to reconciliation state\n");
         state = 1;
     } else { //already in recon state
-        printf("We are in reconciliation state: \n\tNeed to restart reconciliation");
+        printf("We are already in reconciliation state: \n\tNeed to restart reconciliation");
     }
+    recon_num = mem_info->gid.id[2]; //i think this is the unique int at the end per group membership change
     recon();
 
 }
@@ -662,6 +682,24 @@ static void print_matrix()
 static void recon()
 {
     printf("\nreconciliation()");
+    //multicast our status_matrix to the group
+    matrixStatus my_status;
+    my_status.membership = recon_num; //needs to be the current membership id + unique id?(does this change even when one server joins another)
+    memcpy(my_status.id_matrix, status_matrix, sizeof(status_matrix)); //copies status_matrix into my_status.id_matrix
+    
+    printf("sending this matrix:\n");
+    for(int r = 0; r < MAX_SERVERS; r++) {
+        for(int c = 0; c < MAX_SERVERS; c++) {
+            printf(" %d ", my_status.id_matrix[r][c]);
+        }
+        printf("\n");
+    }
+    printf("\nthis is my local status matrix:");
+    print_matrix();
+   
+    printf("\nmembership unique ID: %d", my_status.membership);
+    //multicast the status matrix
+    //ret = SP_multicast(Mbox, AGREED_MESS, -------, 2, sizeof(matrixStatus), (char*)(&my_status));
     state = 0; //switch back to regular state
 }
 

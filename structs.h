@@ -48,3 +48,8 @@ typedef struct dummy_node{
 typedef struct dummy_linkedList{
     struct dummy_node sentinel;
 }linkedList;
+
+typedef struct dummy_status {
+    int id_matrix[MAX_SERVERS][MAX_SERVERS]; //5x5 status matrix 
+    int membership; //unique id for this group/round
+}matrixStatus;
