@@ -41,7 +41,7 @@ int main( int argc, char *argv[] )
     printf("Client: connected to %s with private group %s\n", Spread_name, Private_group );
 
     print_menu();
-    client_window = malloc(sizeof(client_window));
+    //client_window = malloc(sizeof(client_window));
     
     E_init();
     E_attach_fd( 0, READ_FD, User_command, 0, NULL, HIGH_PRIORITY); //users control has highest priority
@@ -225,19 +225,23 @@ static void Read_message()
     membership_info memb_info;
     int ret;
 
+
     ret = SP_receive(Mbox, &service_type, sender, 10, &num_groups, target_groups, &mess_type, &endian_mismatch, sizeof(mess), mess); 
 
     if ( Is_regular_mess( service_type ) )
     {
         mess[ret] = 0;
+        //need to free below
+        client_window = malloc(sizeof(client_window));
         switch ( mess_type )
         {
             case 0: ;
                 client_window = (window*)mess;
                 print_emails();
+                //free(client_window);
                 break;
             default: ;
-                printf("unkown ");
+                printf("unknown ");
         }
     }else if (Is_membership_mess( service_type ) )
     {
