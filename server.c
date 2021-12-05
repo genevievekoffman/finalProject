@@ -56,7 +56,7 @@ int main(int argc, char **argv)
     test_timeout.usec = 0;
 
     updates_sent = 0; 
-    new_update = (update*)malloc(sizeof(update));
+    //new_update = (update*)malloc(sizeof(update));
 
     //fills with 0's
     for(int r = 0; r<MAX_SERVERS; r++) {
@@ -115,6 +115,8 @@ static void Read_message()
     char recipients_file[MAX_USERNAME+11];
 
     sc = (server_index + '0'); 
+    //need to free below
+    new_update = (update*)malloc(sizeof(update));
 
     ret = SP_receive( Mbox, &service_type, sender, 10, &num_groups, target_groups, &mess_type, &endian_mismatch, sizeof(mess), mess);
 
@@ -135,11 +137,16 @@ static void Read_message()
                 break;
                 
             case 1: ; //new email from a client  
+                
                 email *new_email = (email*)mess;
 
                 printf("\nReceived a new email from client\n\t");
                 print_email(new_email);
 
+                //clear the new_update
+                memset(new_update, '\0', sizeof(update));
+                printf("\nsizeof(new_update->email_) = %ld", sizeof(new_update->email_));
+                printf("\nsizeof(new_email) = %ld", sizeof(new_email));
                 strcpy(new_update->email_.to, new_email->to);
                 strcpy(new_update->email_.subject, new_email->subject);
                 strcpy(new_update->email_.message, new_email->message);
