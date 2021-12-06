@@ -23,8 +23,10 @@ static mailbox Mbox;
 static char Spread_name[80];
 static int To_exit = 0;
 static char sc;
-
+static int state; //0 = normal state 1 = reconciliation state
 static int ret;
+FILE *fw;
+
 static void Read_message();
 static void Bye();
 static void request_mailbox(char *client);
@@ -42,18 +44,15 @@ static void get_filename(char *fn, char *client, int r);
 static update *new_update;
 static matrixStatus *new_matrix;
 static int updates_sent; //sequence num
-FILE *fw;
-FILE* fw2;
-static char si;
 static void print_matrix();
 static linkedList updates_window[MAX_SERVERS]; 
 static int status_matrix[MAX_SERVERS][MAX_SERVERS]; //5x5 matrix with pointers to id's
 static char log_filename[9];
-static int state; //0 = normal state 1 = reconciliation state
 static matrixStatus recon_matrices[MAX_SERVERS]; //used during reconcilation to hold other servers incoming status matrices
 //used to keep track of how many incoming matrices we have
 int recon_num; //unique reconciation num
 int matrices_needed;
+char recon_target_groups[MAX_SERVERS][MAX_GROUP_NAME]; //used during recon (saves membership info I want to use after receiving matrices)
 static void compare_matrices();
 
 int main(int argc, char **argv)
@@ -81,7 +80,7 @@ int main(int argc, char **argv)
     sprintf( Spread_name, "10050"); //always connects to my port
     strncat( Server, argv[1], 1 );
     sprintf( Private_group, argv[1] );
-    si = server_index + '0'; 
+    sc = server_index + '0'; 
     /* connect to SPREAD */ 
     ret = SP_connect_timeout( Spread_name, Server, 0, 1, &Mbox, Private_group, test_timeout ); 
     if( ret != ACCEPT_SESSION ) {
@@ -168,7 +167,7 @@ static void Read_message()
                 //printf("\nafter setting udpate fields, new_update->email:\n\t"); 
                 print_email(&new_update->email_);
                 //write the update to OUR log file ##LOG.txt
-                write_to_log(&si);
+                write_to_log(&sc);
                 //writes the email in the recipients emails.txt file
                 char filename[MAX_USERNAME+11] = "";
                 printf("\nbefore getfilename(): new_update->email_.to = %s", new_update->email_.to);
@@ -222,21 +221,19 @@ static void Read_message()
                 strcpy(new_update->email_.to, temp_req->user);
                 
                 //write update to OUR log file ##LOG.txt
-                write_to_log(&si);
+                write_to_log(&sc);
 
                 char fn[MAX_USERNAME+11] = "";
                 get_filename(fn, new_update->email_.to, 1); //1=reads.txt
-                if ( ( fw2 = fopen(fn, "a") ) == NULL ) {
+                if ( ( fw = fopen(fn, "a") ) == NULL ) {
                     perror("fopen");
                     exit(0);
                 }
                 //write the emails id in the recipients read.txt file
-                //printf("WRITING3:"); 
-                //print_id(&new_update->mail_id);
-                ret = fprintf(fw2, "%d %d\n", new_update->mail_id.server, new_update->mail_id.sequence_num);
+                ret = fprintf(fw, "%d %d\n", new_update->mail_id.server, new_update->mail_id.sequence_num);
                 if ( ret < 0 )
                     printf("fprintf error");
-                fclose(fw2);
+                fclose(fw);
                 
                 apply_update();
                 
@@ -257,18 +254,18 @@ static void Read_message()
                 strcpy(new_update->email_.to, tempreq->user);
                 
                 //write update to OUR log file ##LOG.txt
-                write_to_log(&si);
+                write_to_log(&sc);
                 char fn_[MAX_USERNAME+11] = "";
                 get_filename(fn_, new_update->email_.to, 2); //2 = deletes.txt
-                if ( ( fw2 = fopen(fn_, "a") ) == NULL ) {
+                if ( ( fw = fopen(fn_, "a") ) == NULL ) {
                     perror("fopen");
                     exit(0);
                 }
                 //write the emails id in here
-                ret = fprintf(fw2, "%d %d\n", new_update->mail_id.server, new_update->mail_id.sequence_num);
+                ret = fprintf(fw, "%d %d\n", new_update->mail_id.server, new_update->mail_id.sequence_num);
                 if ( ret < 0 )
                     printf("fprintf error");
-                fclose(fw2);
+                fclose(fw);
                 
                 apply_update(); 
 
@@ -338,11 +335,11 @@ static void Read_message()
             case 6: ; //matrices sent during recon mode
                 if (state == 0) printf("\nERROR IN RECON STATE");
                 printf("\nreceived a matrix in recon state");
-                printf("\n%d members in this partition", num_groups);
-                
-                //need an array filled with status matrices of size num_groups -> each will hold a status_matrix
+                printf("\n%d members in this partition(issue ...)", num_groups);
                 
                 //if ( server_index == atoi(&sender[7]) ) break;
+                for( int i = 0; i < MAX_SERVERS; i++ )
+                    printf("\t%s\n", &recon_target_groups[i][0] );
                 
                 new_matrix = (matrixStatus*)mess;
                 
@@ -351,27 +348,70 @@ static void Read_message()
                     break;
                 }
 
-                printf("\nreceived the status matrix from %s", sender);
-                for(int r = 0; r < MAX_SERVERS; r++) {
-                    for(int c = 0; c < MAX_SERVERS; c++) {
-                        printf(" %d ", new_matrix->id_matrix[r][c]);
-                    }
-                    printf("\n");
-                }
-
                 //add the incoming matrix to our recon_matrices at the index of the sender
                 memcpy( &recon_matrices[atoi(&sender[7]) - 1], new_matrix, sizeof(matrixStatus) ); 
-                printf("\nOur recon_matrices[%d] = \n", atoi(&sender[7]) - 1);
-                print_recon_mat_at_index(atoi(&sender[7]) - 1);
+                //printf("\nOur recon_matrices[%d] = \n", atoi(&sender[7]) - 1);
+                //print_recon_mat_at_index(atoi(&sender[7]) - 1);
 
                 matrices_needed--; //received another one (one less we need)
 
                 //once we've received the needed # of matrices, we can start compare their IDS
                 if ( matrices_needed == 0 ) { //have all of them
+                    printf("\n\tWE HAVE ALL MATRICES AND CAN BEGIN COMPARING IDS... set state = 0 for now\n");
+                    int min[MAX_SERVERS] = {0};
+                    int max[MAX_SERVERS] = {0};
+                    int sender[MAX_SERVERS] = {0}; //the server to resend missing updates
+                    for(int x = 0; x < MAX_SERVERS; x++) printf(" %d ", min[x]);
+                    //compare each matrices column
+                    for ( int j = 0; j < MAX_SERVERS; j++ ) {
+                        for ( int i = 0; i < MAX_SERVERS; i++ ) {
+                            if((&recon_target_groups[i][0])[0] != '#') //no member in this spot
+                                continue;
+                            //for each member in the group
+                            printf("\nmember = %s", &recon_target_groups[i][0]);
+                            int server_ = atoi(&(&recon_target_groups[i][0])[7]);//server
+                            printf("\nserver_ = %d",server_);
+                            matrixStatus *curr_mat = &recon_matrices[server_-1];
+                            //go to their row(server index), whatever column
+                            
+                            //right now im just looking at their row
+                            int id_val = curr_mat->id_matrix[server_-1][j];
+                            printf("\n\tID_VAL at server %d's own row at index %d = %d", server_, j, id_val);
+                            printf("\nchecking if they are a max or min\n");
+                            //check if it is a new min or max
+                            if ( id_val > max[j] ) {
+                                printf("...%d is > max[%d]=%d, updating it\n",id_val,j,max[j]);
+                                max[j] = id_val;
+                                sender[j] = i+1; //server who will resend missing updates
+                                printf("\tso server %d has max now\n", i+1);
+                            }
+                            if ( id_val < min[j] ) {
+                                printf("...%d is < min[%d] = %d, updating it\n",id_val,j,min[j]);
+                                min[j] = id_val;
+                            }
+                            //if they are max -> they become the sender (need to resend this missing updates) 
+                        }
+                        //calculated a min & max for j
+                        if ( sender[j] == server_index ) { //I need to send the missing updates from min-max
+                            printf("\nI - server %d - am sending missing updates from: %d,%d to %d,%d", server_index, j+1,min[j],j+1,max[j]);
+                        //open file: my_server_index_J+1_LOGS and send missing updates
+                        //we should have the updates in our linked list
+                        printf("linked list at index index %d (these are the updates we need to send ...well some of them)\n", j+1);
+                        print_repo(j);
+                            //ret = SP_multicast(Mbox, AGREED_MESS, "all_servers", 5, sizeof(update), (char*)(new_update));
+                        }
+                    }
+                    printf("\ndone building min & max array");
+                    printf("\nmin: ");
+                    for(int x = 0; x < MAX_SERVERS; x++) printf(" %d ", min[x]);
+                    printf("\nmax: ");
+                    for(int x = 0; x < MAX_SERVERS; x++) printf(" %d ", max[x]);
+                    printf("\nsender: ");
+                    for(int x = 0; x < MAX_SERVERS; x++) printf(" %d ", sender[x]);
+                    
+                    //now re send the updates if we are the sender 
                     state = 0;
-                    printf("\n\tWE HAVE ALL MATRICES AND CAN BEGIN COMPARING IDS... set state = 0 for now");
-                    compare_matrices();
-                } else printf("\n\twe need %d more matrices in this round", matrices_needed);
+                }
                 fflush(0);
 
                 break;
@@ -404,7 +444,9 @@ static void Read_message()
             printf("grp id is %d %d %d\n",memb_info.gid.id[0], memb_info.gid.id[1], memb_info.gid.id[2] );  //last int seems to be a unique 'round' for every membership change in a group
             
             matrices_needed = num_groups; //used in case we enter recon to track num of matrices we have
-            printf("\n\tCHANGING mat_needed to %d\n", matrices_needed);
+            //printf("\n\tCHANGING mat_needed to %d\n", matrices_needed);
+            //also used in case we enter recon
+            memcpy(recon_target_groups, target_groups, sizeof(char)*MAX_SERVERS*MAX_GROUP_NAME);
             //membership changed
             if ( Is_caused_join_mess( service_type ) ){
                 printf("Due to the JOIN of %s\n", memb_info.changed_member );
@@ -450,7 +492,7 @@ static void Read_message()
 static void write_to_log(char *sec_server) //for the second # of the filename (in case its not OUR log file :))
 {
     memset(log_filename, '\0', 9); //clears the contents of logfile 
-    strncpy(log_filename, &si, 1);
+    strncpy(log_filename, &sc, 1);
     strncpy(&log_filename[1], sec_server, 1); //&si
     strcat(log_filename, "LOG.txt");
     if ( ( fw = fopen(log_filename, "a") ) == NULL ) {
@@ -508,7 +550,7 @@ static void request_mailbox(char *client)
                     new_cell->mail_id.sequence_num = atoi(&extract[2]);
                     break;
                 case 2: ;
-                    printf("\t extract = %s\n", extract);
+                    //printf("\t extract = %s\n", extract);
                     sprintf(new_cell->mail.subject,extract);
                     break;
                 case 3: ;
@@ -576,7 +618,12 @@ int repo_insert(int index, update* u)
     
     //if type = 1, add the email_ contents
     //pnode.update.email_.
-    
+   
+    if(u->type == 1) { //new email
+        memcpy(&pnode->update.email_,&u->email_,sizeof(email));
+    } else { //read or delete
+        strcpy(pnode->update.email_.to, u->email_.to);
+    }
     pnode->nxt = updates_window[index].sentinel.nxt;
     updates_window[index].sentinel.nxt = pnode;
     return 0;
@@ -592,7 +639,13 @@ static void print_repo(int i)
         ptemp = ptemp->nxt;
         printf("\nupdate_id: <%d,%d>", ptemp->update.update_id.server, ptemp->update.update_id.sequence_num);
         printf(" mail_id: <%d,%d>", ptemp->update.mail_id.server, ptemp->update.mail_id.sequence_num);
-        printf(", update type: %d", ptemp->update.type);
+        printf(", update type: %d ", ptemp->update.type);
+        
+        if(ptemp->update.type == 1) { //new email
+            print_email(&ptemp->update.email_);
+        } else { //read or delete
+            printf(" requested by: %s\n", ptemp->update.email_.to);
+        }
     } while(ptemp->nxt != NULL);
 }
 
@@ -656,6 +709,9 @@ static int check_status(id *id_, char *file)
 static void compare_matrices()
 {
     printf("COMPARING MATRICES NOW (TODO)\n");
+    for ( int i = 0; i < MAX_SERVERS; i++ ) {
+        
+    }
     state = 0; //set back to normal when reocn is done
 }
 
