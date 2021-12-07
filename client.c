@@ -30,7 +30,7 @@ int main( int argc, char *argv[] )
     test_timeout.usec = 0;
 
     sprintf( Spread_name, "10050"); //always connects to my port
-    
+    memset(curr_client, '\0', MAX_USERNAME);
     int ret;
     /* connect to SPREAD */
     ret = SP_connect_timeout( Spread_name, "client", 0, 1, &Mbox, Private_group, test_timeout ); 
@@ -67,35 +67,75 @@ static void User_command()
                 break;
             }
 
-            //TODO: add further check on if user is already logged in
+            if ( curr_client[0] != '\0' ) { //user already logged in
+                if ( ( ret = SP_leave(Mbox, curr_client) ) ) //first disconnect from here 
+                    SP_error(ret);
+            }
+            
+            int reconnect = 0; //when 1 -> continue to connect to a mail server
+            if (connected() == 0) {
+                //if connected to a server and logging in with a new username -> leave old serverclient group 
+                //& reconnect with the new serverclient group
+                char cs_group[MAX_USERNAME];
+                sprintf ( cs_group, &curr_server[6] );
+                strncat( cs_group, curr_client, sizeof(curr_client) );
+                printf("cs_group = %s", cs_group);
+                if ( ( ret = SP_leave(Mbox, cs_group) ) ) 
+                    SP_error(ret);
+                //TODO: need to connect with the same curr_server but with the new user!!
+                reconnect = 1; 
+            }
             sprintf(curr_client, username);
-            //printf("cc: %s", curr_client);
             //creates its own group username
             ret = SP_join(Mbox, curr_client);
             if ( ret < 0 ) SP_error( ret );
             logged_in = 1;
             
-            //printf("\ncurr_client = %s", curr_client);
-            fflush(0);
+            //reconnecting
+            
+            if (reconnect == 1) {
+                char cs_group[MAX_USERNAME];
+                sprintf(cs_group, &curr_server[6]);
+                strncat(cs_group, curr_client, sizeof(curr_client));
+                if ( ( ret = SP_join(Mbox, cs_group) ) )
+                    SP_error(ret);
+                
+                //requests to connect with that server
+                ret = SP_multicast(Mbox, AGREED_MESS, curr_server, 0, sizeof(curr_client), curr_client);
+                if ( ret < 0 ) SP_error( ret );
+            }
+            
             break;
 
         case 'c': ;
-            strncpy(curr_server, "server", 7); //resets curr_server to "server "
             //connecting to a mail server
             if ( logged_in == 0 ) {
                 printf("\n...no user logged in ... \n");
                 break;
             }
+
+            //if already connected to another server we need to disconnect from them first
+            if (connected() == 0) {
+                //disconnect from the serverclient group
+                char cs_group[MAX_USERNAME];
+                sprintf(cs_group, &curr_server[6]);
+                strncat(cs_group, curr_client, sizeof(curr_client));
+                printf("cs_group = %s", cs_group);
+                if ( ( ret = SP_leave(Mbox, cs_group) ) ) //why is the server not being notified of this membership change?
+                    SP_error(ret);
+            }
+
+            strncpy(curr_server, "server", 7); //resets curr_server to "server "
+            
             char server[MAX_USERNAME];
             ret = sscanf( &command[2], "%s", server);
-            
             int s = atoi(server);
             //make sure it's just one int & 1-5
             if ( ret != 1 || s > 5 || s < 1 ) { 
                 printf("\ninvalid server number\n");
                 break;
             }
-            //joins the server_client group: 1genkoffman
+            //joins the server_client group in format: 1genevieve
             strncat( server, curr_client, sizeof(curr_client) );
             ret = SP_join(Mbox, server);
             if ( ret < 0 ) SP_error( ret );
@@ -103,10 +143,6 @@ static void User_command()
             //requests to connect with that server
             ret = SP_multicast(Mbox, AGREED_MESS, curr_server, 0, sizeof(curr_client), curr_client);
             if ( ret < 0 ) SP_error( ret );
-           
-            //TODO: waits until it gets a membership notification that says the server joined the group
-                //then we can update the curr_server (connection etablished)
-            //can we just set the curr_server or do we need to wait for connection join notification on that group ...
             break;
 
         case 'm': ;
@@ -116,7 +152,6 @@ static void User_command()
                 break;
             }
 
-            //printf("curr_client = %s", curr_client);
             email *new_msg;
             new_msg = (email*) malloc(sizeof(email));
             //get the recipient/to, subject, & msg
@@ -140,7 +175,7 @@ static void User_command()
 
         case 'd': ;
             //ASSUMPTION: client has already called 'l' so they know the serial numbers of mails
-            if (logged_in == 0) {
+            if ( logged_in == 0 ) {
                 printf("\n...no user logged in ... \n");
                 break;
             }
@@ -157,7 +192,6 @@ static void User_command()
             
             ret = SP_multicast(Mbox, AGREED_MESS, curr_server, 3, sizeof(request), (char*)(&req_));
             if ( ret < 0 ) SP_error( ret );
-            
             break;
         
         case 'r': ;
@@ -181,11 +215,10 @@ static void User_command()
 
             request req;
             fill_request(&req,atoi(sn_));
-            printf("\nreq->mail_id.server=%d,req->mail_id.sequence_num=%d", req.mail_id.server, req.mail_id.sequence_num); 
+            //printf("\nreq->mail_id.server=%d,req->mail_id.sequence_num=%d", req.mail_id.server, req.mail_id.sequence_num); 
+            //sends the request to the server
             ret = SP_multicast(Mbox, AGREED_MESS, curr_server, 2, sizeof(request), (char*)(&req));
             if ( ret < 0 ) SP_error( ret );
-            
-            //send the update to the server
             break;
 
         case 'l': ;
@@ -194,7 +227,6 @@ static void User_command()
                 printf("\n\terror: either not logged in or no connection with server\n");
                 break;
             }
-            //printf("curr_client = %s", curr_client);
             fflush(0);
             ret = SP_multicast( Mbox, AGREED_MESS, curr_server, 4, sizeof(curr_client), curr_client);
 
@@ -202,11 +234,16 @@ static void User_command()
                 SP_error( ret );
                 Bye();
             }
-
             break;
 
-        case 'v': ;
+        case 'v': ; //TODO
             printf("membership");
+            break;
+        
+        case 'p': ; 
+            print_menu();
+            break;
+        
         default:
             printf("\nUnknown command\n");
             break;
@@ -285,6 +322,8 @@ static void print_emails()
     printf("Mailbox of @%s\n", curr_client); 
     printf("Connected to %s\n", curr_server);
 
+    printf("\n\tsn\tsender\tsubject");
+    printf("\n\t-------------------");
     cell *cell_;
     for( int i = 0; i < MAX_CELLS; i++ ) {
         cell_ = &client_window->window[i];
@@ -292,17 +331,18 @@ static void print_emails()
             return;
         } else {
             //TODO: ONLY NEED TO PRINT THE SENDER & SUBJECT
-            printf("\n\t%d\t<%d,%d>\t%s\t%s\t%s\t%c\n", cell_->sn, cell_->mail_id.server, cell_->mail_id.sequence_num, cell_->mail.subject, cell_->mail.message, cell_->mail.sender, cell_->status);
+            printf("\n%7d%11s%10s\n", cell_->sn, cell_->mail.sender, cell_->mail.subject);
+            //printf("\n\t%d\t<%d,%d>\t%s\t%s\t%s\t%c\n", cell_->sn, cell_->mail_id.server, cell_->mail_id.sequence_num, cell_->mail.subject, cell_->mail.message, cell_->mail.sender, cell_->status);
+            fflush(0);
         }
     }
-
 }
 
 //fills the information within the request type
 static void fill_request(request *req, int sn)
 {
     cell *temp_cell = &client_window->window[sn-1];
-    printf("\ngrabbed cell with id = <%d,%d>\n", temp_cell->mail_id.server, temp_cell->mail_id.sequence_num);
+    //printf("\ngrabbed cell with id = <%d,%d>\n", temp_cell->mail_id.server, temp_cell->mail_id.sequence_num);
     strcpy(req->user, curr_client);
     req->mail_id.server = temp_cell->mail_id.server;
     req->mail_id.sequence_num = temp_cell->mail_id.sequence_num;
@@ -313,13 +353,14 @@ static void print_menu()
     printf("\n");
     printf("User Menu:\n");
     printf("----------\n");
-    printf("\n\tu <usernmae> -- login with username\n");
+    printf("\n\tu <username> -- login with username\n");
     printf("\tc <server> -- connect with mail server\n");
     printf("\tl -- list received mail\n");
     printf("\tm -- write an email\n");
     printf("\td <email sn> -- delete an email\n");
     printf("\tr <email sn> -- read an email\n");
     printf("\tv -- prints memberships in current mail server\n");
+    printf("\tp -- print menu\n");
     fflush(stdout);
 }
 
