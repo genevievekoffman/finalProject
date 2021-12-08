@@ -20,6 +20,7 @@ static void print_emails();
 static void print_menu();
 static void User_command();
 static void fill_request(request *req, int sn);
+static int valid(); 
 
 static window *client_window;
 
@@ -41,7 +42,6 @@ int main( int argc, char *argv[] )
     printf("Client: connected to %s with private group %s\n", Spread_name, Private_group );
 
     print_menu();
-    //client_window = malloc(sizeof(client_window));
     
     E_init();
     E_attach_fd( 0, READ_FD, User_command, 0, NULL, HIGH_PRIORITY); //users control has highest priority
@@ -147,10 +147,8 @@ static void User_command()
 
         case 'm': ;
             //sending an email
-            if ( logged_in == 0 || connected() == -1 ) { 
-                printf("\n...no user logged in or no connection with server... \n");
+            if ( valid() == 0 )
                 break;
-            }
 
             email *new_msg;
             new_msg = (email*) malloc(sizeof(email));
@@ -167,7 +165,7 @@ static void User_command()
             new_msg->message[strcspn(new_msg->message,"\n")] = 0;
             sprintf(new_msg->sender, curr_client);
             //printf("\nnew_msg->sender = %s", new_msg->sender);
-            
+            fflush(0); 
             //sends new email to connected server
             ret = SP_multicast(Mbox, AGREED_MESS, curr_server, 1, sizeof(email), (char*)(new_msg));
             if ( ret < 0 ) SP_error( ret );
@@ -222,22 +220,26 @@ static void User_command()
             break;
 
         case 'l': ;
-            //must be logged in
-            if ( logged_in == 0 || connected() == -1 ) {
-                printf("\n\terror: either not logged in or no connection with server\n");
+            if ( valid() == 0 )
                 break;
-            }
+            
             fflush(0);
             ret = SP_multicast( Mbox, AGREED_MESS, curr_server, 4, sizeof(curr_client), curr_client);
-
             if ( ret < 0 ) {
                 SP_error( ret );
                 Bye();
             }
             break;
 
-        case 'v': ; //TODO
-            printf("membership");
+        case 'v': ; 
+            printf("\nmembership");
+            if ( valid() == 0 ) 
+                break; 
+            ret = SP_multicast( Mbox, AGREED_MESS, curr_server, 7, sizeof(curr_client), curr_client );
+            if ( ret < 0 ) {
+                SP_error( ret );
+                Bye();
+            }
             break;
         
         case 'p': ; 
@@ -264,25 +266,33 @@ static void Read_message()
 
 
     ret = SP_receive(Mbox, &service_type, sender, 10, &num_groups, target_groups, &mess_type, &endian_mismatch, sizeof(mess), mess); 
-
     if ( Is_regular_mess( service_type ) )
     {
         mess[ret] = 0;
-        //need to free below
+        //printf("mess_type = %c", mess_type);
+        //printf("sizeof(mess) = %ld", sizeof(mess));
         client_window = malloc(sizeof(client_window));
         switch ( mess_type )
         {
-            case 0: ;
+            case 0: ; //received a window from server
                 client_window = (window*)mess;
                 print_emails();
                 //free(client_window);
                 break;
+            case 2: ; //NOT WORKING received the members in curr_servers network component
+                //printf("\ngot a network component");
+                char *msg = (char*)mess;
+                printf(msg);
+                char ntwrk[MAX_SERVERS] = {0};
+                sprintf(ntwrk, mess, sizeof(mess));
+                printf(ntwrk);
+                break;     
             default: ;
                 printf("unknown ");
         }
-    }else if (Is_membership_mess( service_type ) )
+    } else if (Is_membership_mess( service_type ) )
     {
-        printf("\nmembership msg\n");
+        //printf("\nmembership msg\n");
         ret = SP_get_memb_info( mess, service_type, &memb_info );
         if ( Is_reg_memb_mess( service_type ) )
         {
@@ -315,7 +325,6 @@ static void Read_message()
 
 }
 
-//issue: why does it print the last one after user has claled another cmnd
 /* prints out contents of client_window */
 static void print_emails()
 {
@@ -323,19 +332,18 @@ static void print_emails()
     printf("Connected to %s\n", curr_server);
 
     printf("\n\tsn\tsender\tsubject");
-    printf("\n\t-------------------");
     cell *cell_;
     for( int i = 0; i < MAX_CELLS; i++ ) {
         cell_ = &client_window->window[i];
         if(cell_->sn == 0) {
             return;
         } else {
-            //TODO: ONLY NEED TO PRINT THE SENDER & SUBJECT
-            printf("\n%7d%11s%10s\n", cell_->sn, cell_->mail.sender, cell_->mail.subject);
+            if(cell_->status != 'd')
+                printf("\n%7d%11s%10s\n", cell_->sn, cell_->mail.sender, cell_->mail.subject);
             //printf("\n\t%d\t<%d,%d>\t%s\t%s\t%s\t%c\n", cell_->sn, cell_->mail_id.server, cell_->mail_id.sequence_num, cell_->mail.subject, cell_->mail.message, cell_->mail.sender, cell_->status);
-            fflush(0);
         }
     }
+    fflush(0);
 }
 
 //fills the information within the request type
@@ -346,6 +354,17 @@ static void fill_request(request *req, int sn)
     strcpy(req->user, curr_client);
     req->mail_id.server = temp_cell->mail_id.server;
     req->mail_id.sequence_num = temp_cell->mail_id.sequence_num;
+}
+
+/* checks that a user is logged in and there is a connection with a server 
+ * returns 0 if not valid else 1 valid/both cases are met */
+static int valid() 
+{
+    if ( logged_in == 0 || connected() == -1 ) {
+        printf("\n\terror: either not logged in or no connection with server\n");
+        return 0; 
+    }
+    return 1;
 }
 
 static void print_menu()
