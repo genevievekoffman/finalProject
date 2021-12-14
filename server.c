@@ -55,6 +55,7 @@ int matrices_needed;
 char recon_target_groups[MAX_SERVERS][MAX_GROUP_NAME]; //used during recon (saves membership info to use after receiving matrices)
 static void reboot_logs();
 static int network_memb[MAX_SERVERS]; //each spot has a 0 or 1 (1 means they are in the current network, 0 is not)
+static int in_network(int server);
 
 int main(int argc, char **argv)
 {
@@ -212,9 +213,7 @@ static void Read_message()
                 if ( ret < 0 )
                     printf("fprintf error");
                 fclose(fw);
-                
                 apply_update();
-                
                 //multicast the update to all_servers group
                 ret = SP_multicast(Mbox, AGREED_MESS, "all_servers", 5, sizeof(update), (char*)(new_update));
                 break;
@@ -337,48 +336,51 @@ static void Read_message()
                     int min[MAX_SERVERS] = {0};
                     int max[MAX_SERVERS] = {0};
                     int sender[MAX_SERVERS] = {0}; //the server to resend missing updates
-                    //compare each matrices column
+                    //compare each incoming matrices column
                     for ( int j = 0; j < MAX_SERVERS; j++ ) {
                         for ( int i = 0; i < MAX_SERVERS; i++ ) {
-                            if((&recon_target_groups[i][0])[0] != '#') //no member in this spot
-                                continue;
                             //for each member in the group
                             int server_ = atoi(&(&recon_target_groups[i][0])[7]);//server
+                            if ( server_ == 0 ) //no server
+                                continue;
+                            
                             matrixStatus *curr_mat = &recon_matrices[server_-1];
                             //go to their row(server index), whatever column
                             
-                            //right now im just looking at their row
                             int id_val = curr_mat->id_matrix[server_-1][j];
-                            //printf("\n\tID_VAL at server %d's own row at index %d = %d", server_, j, id_val);
+                            
                             //check if it is a new min or max
-                            if ( id_val > max[j] ) {
-                                printf("...%d is > max[%d]=%d, updating it\n",id_val,j,max[j]);
+                            if ( id_val > max[j] && in_network(server_) == 1 ) { //they must also be in the partition!!
+                                //printf("...%d is > max[%d]=%d, updating it\n",id_val,j,max[j]);
                                 max[j] = id_val;
-                                sender[j] = i+1; //server who will resend missing updates
+                                sender[j] = server_; //server who will resend missing updates
                             }
-                            if ( id_val < min[j] ) {
-                                printf("...%d is < min[%d] = %d, updating it\n",id_val,j,min[j]);
+                            
+                            if ( id_val < min[j] ) 
                                 min[j] = id_val;
-                            }
-                            //if they are max -> they become the sender (need to resend this missing updates) 
                         }
                         //calculated a min & max for j
                         if ( sender[j] == server_index ) //I need to send the missing updates from min-max
                             resend_updates(j+1, min[j]+1, max[j]);
                     }
                     state = 0; //state goes back to normal
+                    print_matrix();
                 }
                 fflush(0);
                 break;
             
             case 7: ; //received a 'v' from client
                 client = (char*)mess;
-                /*
                 printf("\nsending to %s: ", client);
-                for( int i = 0; i < MAX_SERVERS; i++ ) 
-                    printf("%d", network_memb[i]); 
-                */
-                ret = SP_multicast( Mbox, AGREED_MESS, client, 2, sizeof(network_memb), (char*)network_memb );
+                char strbuff[MAX_SERVERS] = "";
+                for( int i = 0; i < MAX_SERVERS; i++ ) { 
+                    printf("%d", network_memb[i]);
+                    char charValue = network_memb[i]+'0';
+                    strcat(strbuff, &charValue);
+                }
+                //sprintf(strbuff, "%d%d%d%d%d", network_memb[0], network_memb[1], network_memb[2], network_memb[3], network_memb[4]);
+                //printf("strbuf = %s", strbuff);
+                ret = SP_multicast( Mbox, AGREED_MESS, client, 1, sizeof(strbuff), strbuff);
                 if (ret < 0 ) SP_error( ret );
                 break;
             
@@ -842,8 +844,6 @@ static void reboot_logs()
                             sprintf(new_update->email_.sender, extract); 
                         break;
                 }
-                //printf("\n\tDONE extracting a line -> update: ");
-                //print_update(new_update);
                 //put it into our linked list & update status matrix
                 repo_insert(i - 1, new_update);
                 status_matrix[server_index-1][i- 1] = new_update->update_id.sequence_num;
@@ -854,6 +854,16 @@ static void reboot_logs()
         }
         print_matrix();
     }
+}
+
+/* checks if server is in the current network component, returns 1 if they are, else 0 */
+static int in_network(int server)
+{
+    for ( int i = 0; i < MAX_SERVERS; i++) {
+        if ( network_memb[i] == server )
+            return 1;
+    }
+    return 0;
 }
 
 static void Bye()

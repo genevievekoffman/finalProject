@@ -232,7 +232,6 @@ static void User_command()
             break;
 
         case 'v': ; 
-            printf("\nmembership");
             if ( valid() == 0 ) 
                 break; 
             ret = SP_multicast( Mbox, AGREED_MESS, curr_server, 7, sizeof(curr_client), curr_client );
@@ -264,32 +263,29 @@ static void Read_message()
     membership_info memb_info;
     int ret;
 
-
     ret = SP_receive(Mbox, &service_type, sender, 10, &num_groups, target_groups, &mess_type, &endian_mismatch, sizeof(mess), mess); 
     if ( Is_regular_mess( service_type ) )
     {
         mess[ret] = 0;
-        //printf("mess_type = %c", mess_type);
-        //printf("sizeof(mess) = %ld", sizeof(mess));
         client_window = malloc(sizeof(client_window));
         switch ( mess_type )
         {
             case 0: ; //received a window from server
                 client_window = (window*)mess;
                 print_emails();
-                //free(client_window);
                 break;
-            case 2: ; //NOT WORKING received the members in curr_servers network component
-                //printf("\ngot a network component");
+            case 1: ; //NOT WORKING received the members in curr_servers network component
                 char *msg = (char*)mess;
-                printf(msg);
-                char ntwrk[MAX_SERVERS] = {0};
-                sprintf(ntwrk, mess, sizeof(mess));
-                printf(ntwrk);
+                printf("Servers in network component: ");
+                for ( int i = 0; i < MAX_SERVERS; i++ )
+                    if (msg[i] != '0') 
+                        printf("%c ", msg[i]);
+                fflush(0);
                 break;     
             default: ;
                 printf("unknown ");
         }
+        //free(client_window);
     } else if (Is_membership_mess( service_type ) )
     {
         //printf("\nmembership msg\n");
